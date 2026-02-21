@@ -1,1088 +1,2282 @@
 <!DOCTYPE html>
 <html lang="ru">
-<head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-  <title>Emoji Clicker</title>
-  <script src="https://cdn.jsdelivr.net/npm/pixi.js@7.x/dist/pixi.min.js"></script>
-  <style>
-    * { box-sizing: border-box; }
-    html, body { width: 100vw; height: 100vh; margin: 0; padding: 0; overflow: hidden; background: #0a0a0a; touch-action: none; font-family: sans-serif; user-select: none; }
-    canvas { display: block; position: fixed; top: 0; left: 0; z-index: 1; width: 100% !important; height: 100% !important; }
-    #hud { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
-    #score_box { position: absolute; top: 10px; right: 14px; text-align: right; }
-    #score_val { font-size: clamp(28px, 5vw, 58px); font-weight: 900; color: #fff; line-height: 1; text-shadow: 0 0 20px rgba(255,200,0,.5), 0 2px 8px rgba(0,0,0,.8); transition: color .3s; }
-    #score_sub { font-size: clamp(11px, 1.7vw, 14px); color: #888; margin-top: 4px; transition: color .3s; }
-    body.light #score_val { color: #1a1a2e; text-shadow: 0 2px 6px rgba(0,0,0,.15); }
-    body.light #score_sub { color: #7f8c8d; }
-    .hbtn { position: absolute; right: 14px; width: 50px; height: 50px; border-radius: 14px; border: none; cursor: pointer; font-size: 22px; display: flex; align-items: center; justify-content: center; background: rgba(37,37,37,.92); color: #fff; pointer-events: all; transition: background .3s, transform .12s, opacity .3s; box-shadow: 0 2px 12px rgba(0,0,0,.4); }
-    .hbtn:active { transform: scale(.88); }
-    body.light .hbtn { background: rgba(232,236,240,.95); color: #1a1a2e; }
-    #btn_menu { bottom: 166px; }
-    #btn_theme { bottom: 106px; }
-    #btn_sound { bottom: 46px; }
-    #btn_open { position: absolute; top: 14px; width: 50px; height: 50px; border-radius: 14px; border: none; cursor: pointer; font-size: 22px; display: flex; align-items: center; justify-content: center; background: rgba(37,37,37,.95); color: #fff; pointer-events: all; z-index: 20; transition: background .3s, transform .12s, left .3s; box-shadow: 0 2px 14px rgba(0,0,0,.5); }
-    #btn_open:active { transform: scale(.88); }
-    body.light #btn_open { background: rgba(232,236,240,.95); color: #1a1a2e; }
-    #boost_bar { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); font-size: 13px; color: #ffd700; font-weight: 900; text-shadow: 0 1px 4px rgba(0,0,0,.8); opacity: 0; transition: opacity .4s; pointer-events: none; white-space: nowrap; }
-    /* На мелких экранах прячем боковые кнопки, если меню открыто */
-    @media (max-width: 600px) {
-      body.menu-open .hbtn {
-        opacity: 0;
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"
+    />
+    <title>Emoji Clicker</title>
+    <script src="https://cdn.jsdelivr.net/npm/pixi.js@7.x/dist/pixi.min.js"></script>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 100vw;
+        height: 100vh;
+        margin: 0;
+        overflow: hidden;
+        background: #0a0a0a;
+        touch-action: none;
+        font-family: sans-serif;
+        user-select: none;
+      }
+      canvas {
+        display: block;
+        position: fixed;
+        top: 0;
+        left: 0;
+        z-index: 1;
+        width: 100% !important;
+        height: 100% !important;
+      }
+      #hud {
+        position: fixed;
+        inset: 0;
         pointer-events: none;
+        z-index: 10;
       }
-    }
-  </style>
-</head>
-<body>
-<div id="hud">
-  <div id="score_box">
-    <div id="score_val">💰 0</div>
-    <div id="score_sub">0/с ×1</div>
-  </div>
-  <button id="btn_open">☰</button>
-  <button id="btn_menu"  class="hbtn" title="Сохранить игру">💾</button>
-  <button id="btn_theme" class="hbtn" title="Переключить тему">🌙</button>
-  <button id="btn_sound" class="hbtn" title="Звук вкл/выкл">🔊</button>
-  <div id="boost_bar"></div>
-</div>
-<script>
-  // Запрещаем контекстное меню правой кнопки
-  document.addEventListener('contextmenu', e => e.preventDefault());
-
-  // ─────────────────────────────────────────────
-  //  Звуки — простая функция‑бипер
-  // ─────────────────────────────────────────────
-  let a_ctx = null;
-  let snd_on = true;
-  const beep = (f, t = 'sine', d = 0.12, v = 0.07) => {
-    if (!snd_on) return;
-    try {
-      if (!a_ctx) a_ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const o = a_ctx.createOscillator();
-      const g = a_ctx.createGain();
-      o.type = t;
-      o.frequency.value = f;
-      g.gain.setValueAtTime(v, a_ctx.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.001, a_ctx.currentTime + d);
-      o.connect(g);
-      g.connect(a_ctx.destination);
-      o.start();
-      o.stop(a_ctx.currentTime + d + 0.01);
-    } catch (e) {
-      // если звук не поддерживается — молча пропускаем
-    }
-  };
-
-  // ─────────────────────────────────────────────
-  //  Тёмная и светлая темы
-  // ─────────────────────────────────────────────
-  const THEMES = {
-    dark: { bg: 0x0a0a0a, txt: 0xffffff, mbg: 0x131318, btn: 0x252530, sub: 0x888888, brd: 0x333340 },
-    light: { bg: 0xf0f2f5, txt: 0x1a1a2e, mbg: 0xffffff, btn: 0xe0e4e8, sub: 0x7f8c8d, brd: 0xbbbbcc }
-  };
-  let col = { ...THEMES.dark };
-  let cur_theme = 'dark';
-  let prev_theme = 'dark';
-  let theme_t = 1;               // параметр для плавного перехода (0..1)
-
-  // Лёгкая интерполяция цветов
-  const lerp_c = (a, b, t) => {
-    const r = c => Math.round(((a >> c) & 0xff) + ((((b >> c) & 0xff) - ((a >> c) & 0xff)) * t));
-    return (r(16) << 16) | (r(8) << 8) | r(0);
-  };
-
-  const apply_theme = th => {
-    cur_theme = th;
-    document.body.classList.toggle('light', th === 'light');
-    document.getElementById('btn_theme').textContent = th === 'dark' ? '🌙' : '🌞';
-  };
-
-  // ─────────────────────────────────────────────
-  //  Достижения (чтобы было к чему стремиться)
-  // ─────────────────────────────────────────────
-  const ACHIEV = [
-    { id: 'c1', icon: '🖱️', name: 'Первый клик', chk: s => s.t_clicks >= 1 },
-    { id: 'c100', icon: '💯', name: '100 кликов', chk: s => s.t_clicks >= 100 },
-    { id: 'c1k', icon: '🏅', name: '1000 кликов', chk: s => s.t_clicks >= 1000 },
-    { id: 'c10k', icon: '🎖️', name: '10 000 кликов', chk: s => s.t_clicks >= 10000 },
-    { id: 'e1k', icon: '🌟', name: 'Тысячник (заработано 1k)', chk: s => s.t_earn >= 1e3 },
-    { id: 'e1m', icon: '💰', name: 'Миллионер', chk: s => s.t_earn >= 1e6 },
-    { id: 'e1b', icon: '💎', name: 'Миллиардер', chk: s => s.t_earn >= 1e9 },
-    { id: 'e1t', icon: '👑', name: 'Триллионер', chk: s => s.t_earn >= 1e12 },
-    { id: 'buy1', icon: '🛒', name: 'Первая покупка', chk: s => Object.values(s.upg).some(u => u.lvl > 0) },
-    { id: 'frnz', icon: '🔥', name: 'В кураже! (8+ кликов/с)', chk: s => s.max_cps >= 8 },
-    { id: 'a100', icon: '🤖', name: 'Авто 100/с', chk: s => s.auto >= 100 },
-    { id: 'a1k', icon: '⚡', name: 'Авто 1000/с', chk: s => s.auto >= 1000 },
-    { id: 'gold', icon: '⭐', name: 'Золотая удача', chk: s => s.g_caught >= 1 },
-    { id: 'pres', icon: '♾️', name: 'Перерождение', chk: s => s.prest_n >= 1 },
-    { id: 'sk6', icon: '🎨', name: 'Коллекционер (6 скинов)', chk: s => s.skins_n >= 6 },
-    { id: 'sk16', icon: '🖼️', name: 'Мастер облика (16 скинов)', chk: s => s.skins_n >= 16 },
-    { id: 'boost', icon: '⚡', name: 'Первый буст', chk: s => s.boosts_used >= 1 },
-    { id: 'crit', icon: '💥', name: 'Критический! (50 критов)', chk: s => s.t_crits >= 50 },
-  ];
-
-  // ─────────────────────────────────────────────
-  //  Состояние игры (state)
-  // ─────────────────────────────────────────────
-  const S = {
-    score: 0,
-    click_pow: 1,
-    mult: 1,
-    auto: 0,
-    crit: 0,                      // шанс крита (0..0.35)
-    t_earn: 0,                    // всего заработано за всё время
-    t_clicks: 0,                  // всего кликов
-    t_crits: 0,                   // всего критов
-    g_caught: 0,                  // поймано золотых уток
-    max_cps: 0,                   // рекорд кликов в секунду
-    prest_n: 0,                   // количество престижей
-    prest_mult: 1,                // множитель престижа
-    skins_n: 1,                   // сколько разных скинов юзали
-    boosts_used: 0,               // сколько раз включали буст
-    boost_ms: 0,                  // сколько осталось буста ×3 (мс)
-    boost_cd: 0,                  // перезарядка буста (мс)
-    boost_dur: 20000,             // длительность буста 20 секунд
-    storm_ms: 0,                  // сколько осталось бури кликов
-    storm_cd: 0,                  // перезарядка бури
-    upg: {
-      power: { lvl: 0, base: 20, sc: 1.45, lbl: 'Клик +1', sub: 'Сила клика' },
-      auto: { lvl: 0, base: 100, sc: 1.55, lbl: 'Авто +1', sub: 'В секунду' },
-      pond: { lvl: 0, base: 2000, sc: 1.65, lbl: 'Пруд +20', sub: 'Пассивный доход' },
-      farm: { lvl: 0, base: 15000, sc: 1.75, lbl: 'Ферма +120', sub: 'Сельское хозяйство' },
-      factory: { lvl: 0, base: 1e5, sc: 1.85, lbl: 'Завод +600', sub: 'Индустрия' },
-      lab: { lvl: 0, base: 8e5, sc: 2.0, lbl: 'Лаба +3000', sub: 'Научный подход' },
-      mult: { lvl: 0, base: 5000, sc: 4.0, lbl: 'Мульт ×2', sub: 'Удваивает всё' },
-      crit: { lvl: 0, base: 2500, sc: 2.2, lbl: 'Крит +5%', sub: 'Урон ×3 (макс 35%)' },
-      storm: { lvl: 0, base: 50000, sc: 5.0, lbl: 'Буря кликов', sub: 'Авто-клик 5с' },
-      luck: { lvl: 0, base: 10000, sc: 3.0, lbl: 'Удача +10%', sub: 'Шанс ×2 дропа' },
-    },
-    unlocked: {},                 // полученные достижения
-    cur_tab: 0,                   // активная вкладка меню
-    menu_open: false,
-    menu_w: 350,
-    scroll_y: 0,                  // текущая прокрутка (px)
-    scroll_tgt: 0,                // целевая прокрутка
-    max_scroll: 0,                // максимальная отрицательная прокрутка
-    dk_scale: 1,                  // масштаб утки (для анимации тыка)
-    dk_rot: 0,                    // поворот утки
-    dk_rot_vel: 0,                // скорость вращения
-    shake: 0,                     // тряска экрана (0..)
-    clicks: [],                   // временные метки кликов для подсчёта CPS
-    auto_timer: 0,                // накопитель времени для авто-дохода
-    g_active: false,              // активна ли золотая утка
-    g_ms: 0,                      // сколько прошло с последнего появления золотой
-    g_next: 45000,                // через сколько появится следующая (мс)
-    last_save: Date.now(),
-    luck_mult: 1,                 // множитель удачи (от апгрейда)
-  };
-
-  // Отдельно храним открытые скины (чтобы не потерять счётчик)
-  let unlocked_skins = new Set(['🦆']); // по умолчанию есть утка
-
-  // ─────────────────────────────────────────────
-  //  Утилиты
-  // ─────────────────────────────────────────────
-  const TIERS = ['', 'K', 'M', 'B', 'T', 'Qa', 'Qi', 'Sx'];
-  const fmt = n => {
-    n = Math.floor(n);
-    if (n < 1000) return String(n);
-    const i = Math.min(Math.floor(Math.log10(n) / 3), TIERS.length - 1);
-    return (n / Math.pow(10, i * 3)).toFixed(1).replace(/\.0$/, '') + TIERS[i];
-  };
-  const upg_price = u => Math.floor(u.base * Math.pow(u.sc, u.lvl));
-  const sec = ms => Math.floor(ms / 1000);
-
-  // ─────────────────────────────────────────────
-  //  Сохранение / загрузка
-  // ─────────────────────────────────────────────
-  let loaded_skin = '🦆';          // скин, который прочитали из сохранения
-  const save = () => {
-    try {
-      localStorage.setItem('ec3', JSON.stringify({
-        score: S.score,
-        click_pow: S.click_pow,
-        mult: S.mult,
-        auto: S.auto,
-        crit: S.crit,
-        t_earn: S.t_earn,
-        t_clicks: S.t_clicks,
-        t_crits: S.t_crits,
-        g_caught: S.g_caught,
-        max_cps: S.max_cps,
-        prest_n: S.prest_n,
-        prest_mult: S.prest_mult,
-        skins_n: S.skins_n,
-        boosts_used: S.boosts_used,
-        luck_mult: S.luck_mult,
-        unlocked: S.unlocked,
-        theme: cur_theme,
-        unlocked_skins: Array.from(unlocked_skins),
-        upg: Object.fromEntries(Object.entries(S.upg).map(([k, v]) => [k, { lvl: v.lvl }])),
-        dk: duck ? duck.text : '🦆',
-        ts: Date.now(),
-      }));
-    } catch (e) { }
-  };
-  const load = () => {
-    try {
-      const raw = localStorage.getItem('ec3');
-      if (!raw) return;
-      const d = JSON.parse(raw);
-      ['score', 'click_pow', 'mult', 'auto', 'crit', 't_earn', 't_clicks', 't_crits', 'g_caught',
-        'max_cps', 'prest_n', 'prest_mult', 'skins_n', 'boosts_used', 'luck_mult', 'unlocked'
-      ].forEach(k => { if (d[k] !== undefined) S[k] = d[k]; });
-      if (d.upg) {
-        Object.keys(d.upg).forEach(k => { if (S.upg[k]) S.upg[k].lvl = d.upg[k].lvl || 0; });
+      #score_box {
+        position: absolute;
+        top: 10px;
+        right: 14px;
+        text-align: right;
+        transition:
+          opacity 0.3s,
+          right 0.3s;
+        max-width: 55vw;
       }
-      if (d.theme) {
-        apply_theme(d.theme);
-        col = { ...THEMES[d.theme] };
-        cur_theme = d.theme;
+      #score_val {
+        font-size: clamp(22px, 4.5vw, 54px);
+        font-weight: 900;
+        color: #fff;
+        line-height: 1;
+        text-shadow:
+          0 0 20px rgba(255, 200, 0, 0.5),
+          0 2px 8px rgba(0, 0, 0, 0.8);
+        transition: color 0.3s;
+        white-space: nowrap;
       }
-      if (d.dk) loaded_skin = d.dk;
-      if (d.unlocked_skins && Array.isArray(d.unlocked_skins)) {
-        unlocked_skins = new Set(d.unlocked_skins);
-        S.skins_n = unlocked_skins.size;
+      #score_sub {
+        font-size: clamp(10px, 1.6vw, 13px);
+        color: #888;
+        margin-top: 3px;
+        white-space: nowrap;
       }
-      // Офлайн доход
-      if (d.ts && S.auto > 0) {
-        const off_s = Math.min((Date.now() - d.ts) / 1000, 3600); // не больше часа
-        const gain = Math.floor(off_s * S.auto * S.mult);
-        if (gain > 0) {
-          S.score += gain;
-          S.t_earn += gain;
-          off_gain = gain;
+      body.light #score_val {
+        color: #2c3e50;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      }
+      body.light #score_sub {
+        color: #5a6a7a;
+      }
+      .hbtn {
+        position: absolute;
+        right: 14px;
+        width: 50px;
+        height: 50px;
+        border-radius: 14px;
+        border: 1px solid transparent;
+        cursor: pointer;
+        font-size: 22px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(37, 37, 37, 0.92);
+        color: #fff;
+        pointer-events: all;
+        transition:
+          background 0.3s,
+          transform 0.12s,
+          border-color 0.3s;
+        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+      }
+      .hbtn:active {
+        transform: scale(0.88);
+      }
+      body.light .hbtn {
+        background: rgba(240, 244, 248, 0.82);
+        color: #2c3e50;
+        border-color: rgba(60, 80, 100, 0.18);
+        box-shadow: 0 1px 6px rgba(0, 0, 0, 0.1);
+      }
+      #btn_save {
+        bottom: 166px;
+      }
+      #btn_theme {
+        bottom: 106px;
+      }
+      #btn_sound {
+        bottom: 46px;
+      }
+      #btn_open {
+        position: absolute;
+        top: 14px;
+        width: 50px;
+        height: 50px;
+        border-radius: 14px;
+        border: 1px solid transparent;
+        cursor: pointer;
+        font-size: 22px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(37, 37, 37, 0.95);
+        color: #fff;
+        pointer-events: all;
+        z-index: 20;
+        transition:
+          background 0.3s,
+          transform 0.12s,
+          left 0.3s,
+          border-color 0.3s;
+        box-shadow: 0 2px 14px rgba(0, 0, 0, 0.5);
+      }
+      #btn_open:active {
+        transform: scale(0.88);
+      }
+      body.light #btn_open {
+        background: rgba(240, 244, 248, 0.9);
+        color: #2c3e50;
+        border-color: rgba(60, 80, 100, 0.18);
+        box-shadow: 0 1px 8px rgba(0, 0, 0, 0.1);
+      }
+      #boost_bar {
+        position: absolute;
+        bottom: 14px;
+        left: 50%;
+        transform: translateX(-50%);
+        font-size: 13px;
+        color: #ffd700;
+        font-weight: 900;
+        text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+        opacity: 0;
+        transition: opacity 0.4s;
+        pointer-events: none;
+        white-space: nowrap;
+      }
+      @media (max-width: 600px) {
+        body.menu_open .hbtn {
+          opacity: 0;
+          pointer-events: none;
+        }
+        body.menu_open #score_box {
+          opacity: 0;
+          pointer-events: none;
         }
       }
-    } catch (e) { }
-  };
-  let off_gain = 0;
-  setInterval(save, 30000);
-  window.addEventListener('beforeunload', save);
+    </style>
+  </head>
+  <body>
+    <div id="hud">
+      <div id="score_box">
+        <div id="score_val">💰 0</div>
+        <div id="score_sub">0/с ×1</div>
+      </div>
+      <button id="btn_open">☰</button>
+      <button id="btn_save" class="hbtn">💾</button>
+      <button id="btn_theme" class="hbtn">🌙</button>
+      <button id="btn_sound" class="hbtn">🔊</button>
+      <div id="boost_bar"></div>
+    </div>
+    <script>
+      "use strict";
+      document.addEventListener("contextmenu", (e) => e.preventDefault());
 
-  // ─────────────────────────────────────────────
-  //  PIXI – сцена, контейнеры
-  // ─────────────────────────────────────────────
-  const app = new PIXI.Application({
-    backgroundColor: 0x0a0a0a,
-    antialias: true,
-    autoDensity: true,
-    resolution: window.devicePixelRatio || 1
-  });
-  document.body.insertBefore(app.view, document.getElementById('hud'));
-
-  const bg_layer = new PIXI.Container();      // плавающие эмодзи на заднем плане
-  const world = new PIXI.Container();         // основной мир: утка, клики, искры
-  const menu_cont = new PIXI.Container();     // само меню (сдвигается влево/вправо)
-  const ui_layer = new PIXI.Container();      // верхний слой (тосты, комбо)
-  const sc = new PIXI.Container();            // контент с прокруткой
-  const mask_g = new PIXI.Graphics();         // маска для прокрутки
-  const sbar_g = new PIXI.Graphics();         // полоса прокрутки
-  const menu_bg = new PIXI.Graphics();        // фон меню
-  const click_area = new PIXI.Graphics();     // невидимая область для кликов
-
-  menu_bg.eventMode = 'static';
-  mask_g.eventMode = 'none';
-  click_area.eventMode = 'static';
-  click_area.cursor = 'pointer';
-
-  app.stage.addChild(bg_layer, world, menu_cont, ui_layer);
-  menu_cont.addChild(menu_bg, sc, mask_g, sbar_g);
-  sc.mask = mask_g;
-  world.addChild(click_area);
-
-  // Главная утка (эмодзи)
-  const duck = new PIXI.Text('🦆', { fontSize: 160 });
-  duck.anchor.set(0.5);
-  world.addChild(duck);
-
-  // Золотая утка
-  const g_duck = new PIXI.Text('⭐', { fontSize: 64 });
-  g_duck.anchor.set(0.5);
-  g_duck.visible = false;
-  g_duck.eventMode = 'static';
-  g_duck.cursor = 'pointer';
-  world.addChild(g_duck);
-
-  // Комбо‑счётчик вверху
-  const combo_lbl = new PIXI.Text('', { fontSize: 40, fill: 0xffa500, fontWeight: '900', strokeThickness: 5, stroke: 0 });
-  combo_lbl.anchor.set(0.5);
-  combo_lbl.visible = false;
-  ui_layer.addChild(combo_lbl);
-
-  // Слой для всплывающих уведомлений (тосты)
-  const toast_layer = new PIXI.Container();
-  ui_layer.addChild(toast_layer);
-  const toasts = [];
-  const show_toast = txt => {
-    const t = new PIXI.Text(txt, { fontSize: 18, fill: 0xffffff, fontWeight: '900', stroke: 0x000000, strokeThickness: 5, align: 'center' });
-    t.anchor.set(0.5);
-    t.position.set(app.screen.width / 2, app.screen.height * 0.80 - toasts.length * 44);
-    t.alpha = 0;
-    t.ttl = 3.0;
-    toast_layer.addChild(t);
-    toasts.push(t);
-  };
-
-  // ─────────────────────────────────────────────
-  //  Плавающие фоновые эмодзи
-  // ─────────────────────────────────────────────
-  const BG_EM = ['🦆', '💰', '⭐', '💎', '🎮', '✨', '🏆', '🎯', '🎲', '🌟', '🚀', '🎈', '🍀', '🎪', '🦋', '🌈'];
-  const floaters = [];
-  const spawn_floater = (start_y) => {
-    const t = new PIXI.Text(BG_EM[Math.floor(Math.random() * BG_EM.length)], { fontSize: 50 + Math.random() * 90 });
-    t.anchor.set(0.5);
-    t.x = Math.random() * app.screen.width;
-    t.y = start_y !== undefined ? start_y : app.screen.height + 80;
-    t.alpha = cur_theme === 'light' ? 0.12 + Math.random() * 0.12 : 0.05 + Math.random() * 0.10;
-    t.vx = (Math.random() - 0.5) * 0.35;
-    t.vy = -(0.2 + Math.random() * 0.45);
-    t.rot_v = (Math.random() - 0.5) * 0.003;
-    bg_layer.addChild(t);
-    floaters.push(t);
-  };
-  for (let i = 0; i < 16; i++) spawn_floater(Math.random() * 2200);
-
-  // ─────────────────────────────────────────────
-  //  Меню: система вкладок
-  // ─────────────────────────────────────────────
-  const MENU_TOP = 80;
-  const TAB_NAMES = ['🛒 Магазин', '🎨 Скины', '📊 Статистика', '👾 Об игре'];
-  const TAB_W = () => S.menu_w / TAB_NAMES.length;
-
-  // Заголовок меню
-  const mhdr_bg = new PIXI.Graphics();
-  const mhdr_lbl = new PIXI.Text('EMOJI CLICKER', { fontSize: 15, fontWeight: '900', fill: 0xffffff });
-  const tab_btns = [];
-  menu_cont.addChild(mhdr_bg);
-  menu_cont.addChild(mhdr_lbl);
-  TAB_NAMES.forEach((nm, i) => {
-    const c = new PIXI.Container();
-    c.eventMode = 'static';
-    c.cursor = 'pointer';
-    const bg = new PIXI.Graphics();
-    const t = new PIXI.Text(nm, { fontSize: 11, fontWeight: 'bold', align: 'center' });
-    t.anchor.set(0.5);
-    c.addChild(bg, t);
-    menu_cont.addChild(c);
-    c.on('pointerdown', e => { e.stopPropagation(); S.cur_tab = i; layout(); });
-    tab_btns.push({ c, bg, t });
-  });
-
-  // Контейнеры для каждой вкладки (внутри sc)
-  const tab_contents = [new PIXI.Container(), new PIXI.Container(), new PIXI.Container(), new PIXI.Container()];
-  tab_contents.forEach(tc => sc.addChild(tc));
-
-  // Вкладка 0: магазин
-  const shop_btns = [];
-  let prestige_row;
-  const init_shop = () => {
-    Object.keys(S.upg).forEach(id => {
-      const c = new PIXI.Container();
-      c.eventMode = 'static';
-      c.cursor = 'pointer';
-      const bg = new PIXI.Graphics();
-      const t = new PIXI.Text('', { fontSize: 14, fontWeight: 'bold' });
-      const d = new PIXI.Text('', { fontSize: 10 });
-      const p = new PIXI.Text('', { fontSize: 13, fontWeight: 'bold' });
-      t.position.set(10, 7);
-      d.position.set(10, 31);
-      c.addChild(bg, t, d, p);
-      tab_contents[0].addChild(c);
-      c.on('pointerdown', e => { e.stopPropagation(); buy(id); });
-      shop_btns.push({ id, c, bg, t, d, p });
-    });
-
-    // Строка престижа
-    prestige_row = new PIXI.Container();
-    prestige_row.eventMode = 'static';
-    prestige_row.cursor = 'pointer';
-    const prBg = new PIXI.Graphics();
-    const prT = new PIXI.Text('✨ ПРЕСТИЖ', { fontSize: 14, fontWeight: '900', fill: 0xffd700 });
-    const prD = new PIXI.Text('', { fontSize: 10, fill: 0xaaaaaa });
-    prT.position.set(10, 7);
-    prD.position.set(10, 29);
-    prestige_row.addChild(prBg, prT, prD);
-    tab_contents[0].addChild(prestige_row);
-    prestige_row._bg = prBg;
-    prestige_row._d = prD;
-    prestige_row.on('pointerdown', e => { e.stopPropagation(); do_prestige(); });
-
-    // Кнопка буста
-    const bst = new PIXI.Container();
-    bst.eventMode = 'static';
-    bst.cursor = 'pointer';
-    const bBg = new PIXI.Graphics();
-    const bT = new PIXI.Text('⚡ БУСТ ×3 (20с)', { fontSize: 14, fontWeight: '900', fill: 0x00ccff });
-    const bD = new PIXI.Text('Утроить доход на 20 секунд', { fontSize: 10, fill: 0xaaaaaa });
-    bT.position.set(10, 7);
-    bD.position.set(10, 29);
-    bst.addChild(bBg, bT, bD);
-    tab_contents[0].addChild(bst);
-    bst._bg = bBg;
-    bst._lbl = bT;
-    bst.on('pointerdown', e => { e.stopPropagation(); use_boost(); });
-    shop_btns._boost = bst;
-  };
-
-  // Вкладка 1: скины
-  const SKINS = [
-    '🦆', '👽', '🎃', '🥶', '💩', '🍔', '💎', '🗿', '🥑', '🦖', '🚀', '🦄', '🔥', '👑', '🎈', '🧊',
-    '🐸', '🤡', '👻', '🦀', '🐙', '🦑', '🌵', '🍄', '🐲', '🦁', '🐯', '🦊', '🐺', '🦝', '🤠',
-    '🧙', '🧟', '🧛', '🤖', '👾', '🎭', '🌀', '💀', '🌙', '☀️', '🍕', '🍣', '🧃', '🎸', '🪐'
-  ];
-  const skin_btns = [];
-  const init_skins = () => {
-    SKINS.forEach(em => {
-      const b = new PIXI.Container();
-      b.eventMode = 'static';
-      b.cursor = 'pointer';
-      const bg = new PIXI.Graphics();
-      const t = new PIXI.Text(em, { fontSize: 26 });
-      t.anchor.set(0.5);
-      b.addChild(bg, t);
-      b.on('pointerdown', ev => {
-        ev.stopPropagation();
-        duck.text = em;
-        S.shake = 5;
-        if (!unlocked_skins.has(em)) {
-          unlocked_skins.add(em);
-          S.skins_n = unlocked_skins.size;
+      // ═══════════════════════════════════════════════════════════════
+      //  Cfg — все константы в одном месте
+      // ═══════════════════════════════════════════════════════════════
+      class Cfg {
+        static THEMES = {
+          dark: {
+            bg: 0x0a0a0a,
+            txt: 0xffffff,
+            mbg: 0x131318,
+            btn: 0x252530,
+            sub: 0x888888,
+            brd: 0x333340,
+          },
+          light: {
+            bg: 0xf0f4f8,
+            txt: 0x2c3e50,
+            mbg: 0xfafcff,
+            btn: 0xedf1f5,
+            sub: 0x5a6a7a,
+            brd: 0x9aaabb,
+          },
+        };
+        static TIERS = ["", "K", "M", "B", "T", "Qa", "Qi", "Sx"];
+        static MENU_TOP = 80;
+        static TAB_NAMES = [
+          "🛒 Магазин",
+          "🎨 Скины",
+          "📊 Статистика",
+          "👾 Об игре",
+        ];
+        static BG_EM = [
+          "🦆",
+          "💰",
+          "⭐",
+          "💎",
+          "🎮",
+          "✨",
+          "🏆",
+          "🎯",
+          "🎲",
+          "🌟",
+          "🚀",
+          "🎈",
+          "🍀",
+          "🎪",
+          "🦋",
+          "🌈",
+        ];
+        static SPARK_EM = ["✨", "💫", "⭐", "🌟", "💥"];
+        static SKINS = [
+          "🦆",
+          "👽",
+          "🎃",
+          "🥶",
+          "💩",
+          "🍔",
+          "💎",
+          "🗿",
+          "🥑",
+          "🦖",
+          "🚀",
+          "🦄",
+          "🔥",
+          "👑",
+          "🎈",
+          "🧊",
+          "🐸",
+          "🤡",
+          "👻",
+          "🦀",
+          "🐙",
+          "🦑",
+          "🌵",
+          "🍄",
+          "🐲",
+          "🦁",
+          "🐯",
+          "🦊",
+          "🐺",
+          "🦝",
+          "🤠",
+          "🧙",
+          "🧟",
+          "🧛",
+          "🤖",
+          "👾",
+          "🎭",
+          "🌀",
+          "💀",
+          "🌙",
+          "☀️",
+          "🍕",
+          "🍣",
+          "🧃",
+          "🎸",
+          "🪐",
+        ];
+        static UPGRADES = {
+          power: {base: 20, sc: 1.45, lbl: "Клик +1", sub: "Сила клика"},
+          auto: {base: 100, sc: 1.55, lbl: "Авто +1", sub: "В секунду"},
+          pond: {base: 2000, sc: 1.65, lbl: "Пруд +20", sub: "Пассивный доход"},
+          farm: {
+            base: 15000,
+            sc: 1.75,
+            lbl: "Ферма +120",
+            sub: "Сельское хозяйство",
+          },
+          factory: {base: 1e5, sc: 1.85, lbl: "Завод +600", sub: "Индустрия"},
+          lab: {base: 8e5, sc: 2.0, lbl: "Лаба +3000", sub: "Научный подход"},
+          mult: {base: 5000, sc: 4.0, lbl: "Мульт ×2", sub: "Удваивает всё"},
+          crit: {
+            base: 2500,
+            sc: 2.2,
+            lbl: "Крит +5%",
+            sub: "Урон ×3 (макс 35%)",
+          },
+          storm: {
+            base: 50000,
+            sc: 5.0,
+            lbl: "Буря кликов",
+            sub: "Авто-клик 5с",
+          },
+          luck: {base: 10000, sc: 3.0, lbl: "Удача +10%", sub: "Шанс ×2 дропа"},
+        };
+        static ACHIEV = [
+          {
+            id: "c1",
+            ico: "🖱️",
+            name: "Первый клик",
+            chk: (s) => s.t_clicks >= 1,
+          },
+          {
+            id: "c100",
+            ico: "💯",
+            name: "100 кликов",
+            chk: (s) => s.t_clicks >= 100,
+          },
+          {
+            id: "c1k",
+            ico: "🏅",
+            name: "1000 кликов",
+            chk: (s) => s.t_clicks >= 1000,
+          },
+          {
+            id: "c10k",
+            ico: "🎖️",
+            name: "10 000 кликов",
+            chk: (s) => s.t_clicks >= 10000,
+          },
+          {id: "e1k", ico: "🌟", name: "Тысячник", chk: (s) => s.t_earn >= 1e3},
+          {
+            id: "e1m",
+            ico: "💰",
+            name: "Миллионер",
+            chk: (s) => s.t_earn >= 1e6,
+          },
+          {
+            id: "e1b",
+            ico: "💎",
+            name: "Миллиардер",
+            chk: (s) => s.t_earn >= 1e9,
+          },
+          {
+            id: "e1t",
+            ico: "👑",
+            name: "Триллионер",
+            chk: (s) => s.t_earn >= 1e12,
+          },
+          {
+            id: "buy1",
+            ico: "🛒",
+            name: "Первая покупка",
+            chk: (s) => Object.values(s.upg).some((u) => u.lvl > 0),
+          },
+          {
+            id: "frnz",
+            ico: "🔥",
+            name: "В кураже! (8+ кликов/с)",
+            chk: (s) => s.max_cps >= 8,
+          },
+          {
+            id: "a100",
+            ico: "🤖",
+            name: "Авто 100/с",
+            chk: (s) => s.auto >= 100,
+          },
+          {
+            id: "a1k",
+            ico: "⚡",
+            name: "Авто 1000/с",
+            chk: (s) => s.auto >= 1000,
+          },
+          {
+            id: "gold",
+            ico: "⭐",
+            name: "Золотая удача",
+            chk: (s) => s.g_caught >= 1,
+          },
+          {
+            id: "pres",
+            ico: "♾️",
+            name: "Перерождение",
+            chk: (s) => s.prest_n >= 1,
+          },
+          {
+            id: "sk6",
+            ico: "🎨",
+            name: "Коллекционер (6 скинов)",
+            chk: (s) => s.skins_n >= 6,
+          },
+          {
+            id: "sk16",
+            ico: "🖼️",
+            name: "Мастер облика (16+)",
+            chk: (s) => s.skins_n >= 16,
+          },
+          {
+            id: "boost",
+            ico: "⚡",
+            name: "Первый буст",
+            chk: (s) => s.boosts_used >= 1,
+          },
+          {
+            id: "crit",
+            ico: "💥",
+            name: "Крит! (50 критов)",
+            chk: (s) => s.t_crits >= 50,
+          },
+        ];
+        static fmt(n) {
+          n = Math.floor(n);
+          if (n < 1000) return String(n);
+          const i = Math.min(
+            Math.floor(Math.log10(n) / 3),
+            Cfg.TIERS.length - 1,
+          );
+          return (
+            (n / Math.pow(10, i * 3)).toFixed(1).replace(/\.0$/, "") +
+            Cfg.TIERS[i]
+          );
         }
-        check_ach();
-        update_ui();
-      });
-      tab_contents[1].addChild(b);
-      skin_btns.push({ b, bg, t });
-    });
-  };
-
-  // Вкладка 2: статистика
-  let stats_txt;
-  const init_stats = () => {
-    stats_txt = new PIXI.Text('', { fontSize: 13, fill: 0xaaaaaa, lineHeight: 22, wordWrap: true });
-    stats_txt.position.set(14, 10);
-    tab_contents[2].addChild(stats_txt);
-  };
-
-  // Вкладка 3: об игре
-  const init_about = () => {
-    const lines = [
-      { txt: '👾', sz: 72, fill: 0xffffff },
-      { txt: 'redeflesq', sz: 28, fill: 0x00ccff },
-      { txt: 'Разработчик игры', sz: 14, fill: 0x888888 },
-      { txt: 'v3.0  2025', sz: 12, fill: 0x444455 },
-      { txt: '', sz: 12, fill: 0x444455 },
-      { txt: 'Советы:', sz: 15, fill: 0xffd700 },
-      { txt: '• Жми быстро — FRENZY x2!', sz: 12, fill: 0x888888 },
-      { txt: '• Лови ⭐ — бонус 10% счёта', sz: 12, fill: 0x888888 },
-      { txt: '• Престиж даёт x1.5 навсегда', sz: 12, fill: 0x888888 },
-      { txt: '• Буст ×3 стоит дёшево — юзай!', sz: 12, fill: 0x888888 },
-      { txt: '• Лаба — лучший авто в игре', sz: 12, fill: 0x888888 },
-    ];
-    let y = 20;
-    lines.forEach(l => {
-      const t = new PIXI.Text(l.txt, { fontSize: l.sz, fill: l.fill, fontWeight: 'bold', align: 'center' });
-      t.anchor.set(0.5, 0);
-      t.x = S.menu_w / 2;
-      t.y = y;
-      tab_contents[3].addChild(t);
-      y += l.sz + 10;
-    });
-  };
-
-  // ─────────────────────────────────────────────
-  //  Основная логика игры
-  // ─────────────────────────────────────────────
-  const buy = id => {
-    const u = S.upg[id];
-    const price = upg_price(u);
-    if (S.score < price || (id === 'crit' && S.crit >= 0.35)) return;
-    S.score -= price;
-    u.lvl++;
-    if (id === 'power') S.click_pow++;
-    else if (id === 'auto') S.auto++;
-    else if (id === 'pond') S.auto += 20;
-    else if (id === 'farm') S.auto += 120;
-    else if (id === 'factory') S.auto += 600;
-    else if (id === 'lab') S.auto += 3000;
-    else if (id === 'mult') S.mult *= 2;
-    else if (id === 'crit') S.crit = Math.min(0.35, S.crit + 0.05);
-    else if (id === 'storm') { /* просто открывается */ }
-    else if (id === 'luck') S.luck_mult = 1 + u.lvl * 0.1;
-    beep(523, 'sine', 0.14, 0.08);
-    check_ach();
-    update_ui();
-  };
-
-  const use_boost = () => {
-    if (S.boost_ms > 0 || S.boost_cd > 0) return;
-    const cost = Math.floor(Math.max(1000, S.auto * S.mult * 5));
-    if (S.score < cost) return;
-    S.score -= cost;
-    S.boost_ms = S.boost_dur;
-    S.boost_cd = 90000;         // 90 секунд перезарядка
-    S.boosts_used++;
-    beep(880, 'sine', 0.3, 0.12);
-    show_toast('⚡ БУСТ АКТИВЕН 20с!');
-    check_ach();
-    update_ui();
-  };
-
-  const do_storm = () => {
-    if (S.upg.storm.lvl === 0 || S.storm_cd > 0 || S.storm_ms > 0) return;
-    S.storm_ms = 5000;          // 5 секунд
-    S.storm_cd = 60000;         // минута перезарядка
-    storm_acc = 0;
-    beep(660, 'square', 0.2, 0.1);
-    show_toast('🌪️ БУРЯ КЛИКОВ 5с!');
-  };
-
-  const do_prestige = () => {
-    if (S.t_earn < 1e9) return;
-    S.prest_n++;
-    S.prest_mult = 1 + S.prest_n * 0.5;   // +50% за каждый престиж
-    const keep = { ...S.unlocked };
-    const sk = S.skins_n;
-    S.score = 0;
-    S.click_pow = 1;
-    S.mult = S.prest_mult;
-    S.auto = 0;
-    S.crit = 0;
-    S.luck_mult = 1;
-    S.t_earn = 0;
-    S.t_clicks = 0;
-    S.max_cps = 0;
-    S.g_caught = 0;
-    S.t_crits = 0;
-    Object.values(S.upg).forEach(u => u.lvl = 0);
-    S.unlocked = keep;
-    S.skins_n = sk;
-    beep(880, 'sine', 0.7, 0.15);
-    show_toast('✨ Престиж! x' + S.prest_mult.toFixed(1) + ' навсегда!');
-    update_ui();
-  };
-
-  const check_ach = () => {
-    ACHIEV.forEach(a => {
-      if (!S.unlocked[a.id] && a.chk(S)) {
-        S.unlocked[a.id] = true;
-        show_toast(a.icon + ' ' + a.name + '!');
-        beep(660, 'sine', 0.4, 0.1);
+        static lerp_c(a, b, t) {
+          const r = (c) =>
+            Math.round(
+              ((a >> c) & 0xff) + (((b >> c) & 0xff) - ((a >> c) & 0xff)) * t,
+            );
+          return (r(16) << 16) | (r(8) << 8) | r(0);
+        }
+        static upg_price(u) {
+          return Math.floor(u.base * Math.pow(u.sc, u.lvl));
+        }
+        static sec(ms) {
+          return Math.floor(ms / 1000);
+        }
       }
-    });
-  };
 
-  // Золотая утка
-  g_duck.on('pointerdown', e => {
-    e.stopPropagation();
-    if (!S.g_active) return;
-    const b = Math.max(200, Math.floor(S.score * 0.1 + S.click_pow * S.mult * 200));
-    S.score += b;
-    S.t_earn += b;
-    S.g_caught++;
-    S.g_active = false;
-    g_duck.visible = false;
-    S.shake = 18;
-    beep(1200, 'sine', 0.5, 0.18);
-    spawn_pop('+' + fmt(b) + '!', g_duck.x, g_duck.y, 0xffd700, 54);
-    check_ach();
-    update_ui();
-  });
-
-  // Обработка клика по утке (игровая зона)
-  const pops = [];
-  const sparks = [];
-  click_area.on('pointerdown', e => {
-    if (S.menu_open && e.global.x < S.menu_w) return; // клик по меню не считается
-    const now = Date.now();
-    S.clicks.push(now);
-    S.t_clicks++;
-    const cps = S.clicks.length;
-    S.max_cps = Math.max(S.max_cps, cps);
-    const frenzy = cps >= 8;
-    const is_crit = Math.random() < S.crit;
-    if (is_crit) S.t_crits++;
-    const boost_m = S.boost_ms > 0 ? 3 : 1;
-    const luck_m = (Math.random() < 0.1 * (S.luck_mult - 1 + 1)) ? S.luck_mult : 1; // шанс ×10% × уровень
-    const v = Math.floor(S.click_pow * S.mult * (is_crit ? 3 : 1) * (frenzy ? 2 : 1) * boost_m * luck_m);
-    S.score += v;
-    S.t_earn += v;
-    S.dk_scale = 0.80;            // эффект сжатия
-    S.shake = is_crit ? 14 : (frenzy ? 8 : 4);
-    const amp = 0.10 + cps * 0.028 + (is_crit ? 0.18 : 0);
-    S.dk_rot_vel += (Math.random() > 0.5 ? 1 : -1) * amp;
-    S.dk_rot_vel = Math.max(-1.5, Math.min(1.5, S.dk_rot_vel));
-    beep(is_crit ? 1100 : 780, is_crit ? 'square' : 'sine', is_crit ? 0.18 : 0.07, 0.06);
-    let lbl = '+' + fmt(v);
-    if (is_crit) lbl += '💥';
-    if (luck_m > 1) lbl += '🍀';
-    spawn_pop(lbl, e.global.x, e.global.y, frenzy ? 0xff3333 : (is_crit ? 0xff8800 : 0xffcc00), is_crit ? 50 : 32);
-    const ns = frenzy ? 5 : (is_crit ? 3 : 1);
-    for (let i = 0; i < ns; i++) spawn_spark();
-    check_ach();
-    update_ui();
-  });
-
-  const spawn_pop = (txt, x, y, fill, size) => {
-    const p = new PIXI.Text(txt, { fontSize: size, fill, fontWeight: '900', strokeThickness: 4, stroke: 0 });
-    p.position.set(x, y);
-    p.anchor.set(0.5);
-    p.l = 1;
-    p.vy = -5;
-    p.vx = (Math.random() - 0.5) * 4;
-    world.addChild(p);
-    pops.push(p);
-  };
-  const SPARK_EM = ['✨', '💫', '⭐', '🌟', '💥'];
-  const spawn_spark = () => {
-    const s = new PIXI.Text(SPARK_EM[Math.floor(Math.random() * SPARK_EM.length)], { fontSize: 16 + Math.random() * 12 });
-    s.position.set(duck.x + (Math.random() - 0.5) * 140, duck.y + (Math.random() - 0.5) * 140);
-    s.vx = (Math.random() - 0.5) * 18;
-    s.vy = (Math.random() - 0.5) * 14 - 7;
-    s.l = 1;
-    world.addChild(s);
-    sparks.push(s);
-  };
-
-  // Буря кликов (накопитель)
-  let storm_acc = 0;
-
-  // ─────────────────────────────────────────────
-  //  Обновление интерфейса (текст, кнопки)
-  // ─────────────────────────────────────────────
-  const update_ui = () => {
-    document.getElementById('score_val').textContent = '💰 ' + fmt(S.score);
-    const ps = Math.floor(S.auto * S.mult * (S.boost_ms > 0 ? 3 : 1));
-    let sub = fmt(ps) + '/с ×' + (Number.isInteger(S.mult) ? S.mult : S.mult.toFixed(1));
-    if (S.prest_n > 0) sub += ' ✨' + S.prest_n;
-    document.getElementById('score_sub').textContent = sub;
-
-    // Планка буста
-    const bbar = document.getElementById('boost_bar');
-    if (S.boost_ms > 0) {
-      bbar.style.opacity = '1';
-      bbar.textContent = '⚡ БУСТ ×3  ' + sec(S.boost_ms) + 'с';
-    } else if (S.storm_ms > 0) {
-      bbar.style.opacity = '1';
-      bbar.textContent = '🌪️ БУРЯ  ' + sec(S.storm_ms) + 'с';
-    } else {
-      bbar.style.opacity = '0';
-    }
-
-    // Кнопки магазина
-    shop_btns.forEach(s => {
-      const u = S.upg[s.id];
-      const is_max = s.id === 'crit' && S.crit >= 0.35;
-      const price = upg_price(u);
-      const can = S.score >= price && !is_max;
-      s.t.text = u.lbl + '  [' + u.lvl + ']';
-      s.t.style.fill = col.txt;
-      s.d.text = is_max ? 'MAX' : u.sub;
-      s.d.style.fill = col.sub;
-      s.p.text = is_max ? '' : (fmt(price) + ' 💰');
-      s.p.style.fill = can ? 0x2ecc71 : 0xe74c3c;
-      s.p.position.set(S.menu_w - s.p.width - 38, 18);
-      s.bg.clear().beginFill(col.btn).lineStyle(2, can ? 0x2ecc71 : col.brd).drawRoundedRect(0, 0, S.menu_w - 26, 54, 11);
-    });
-    // Кнопка буста
-    if (shop_btns._boost) {
-      const bst = shop_btns._boost;
-      const cd = S.boost_cd > 0;
-      const cost = Math.floor(Math.max(1000, S.auto * S.mult * 5));
-      const can = !cd && S.score >= cost && S.boost_ms <= 0;
-      bst._lbl.text = S.boost_ms > 0 ? '⚡ АКТИВЕН ' + sec(S.boost_ms) + 'с' : (cd ? '⏳ КД ' + sec(S.boost_cd) + 'с' : '⚡ БУСТ ×3 (' + fmt(cost) + ' 💰)');
-      bst._bg.clear().beginFill(col.btn).lineStyle(2, can ? 0x00ccff : col.brd).drawRoundedRect(0, 0, S.menu_w - 26, 54, 11);
-    }
-
-    // Престиж
-    if (prestige_row) {
-      const can_p = S.t_earn >= 1e9;
-      prestige_row.visible = can_p || S.prest_n > 0;
-      if (prestige_row.visible) {
-        const nm = (1 + (S.prest_n + 1) * 0.5).toFixed(1);
-        prestige_row._d.text = can_p ? 'Сброс → x' + nm + ' навсегда!' : 'Нужно 1B (' + fmt(S.t_earn) + ')';
-        prestige_row._bg.clear().beginFill(can_p ? 0x2e2000 : col.btn).lineStyle(2, can_p ? 0xffd700 : col.brd).drawRoundedRect(0, 0, S.menu_w - 26, 52, 11);
+      // ═══════════════════════════════════════════════════════════════
+      //  EventBus — pub/sub развязка между системами
+      // ═══════════════════════════════════════════════════════════════
+      class EventBus {
+        #listeners = {};
+        on(ev, fn) {
+          (this.#listeners[ev] ??= []).push(fn);
+          return this;
+        }
+        off(ev, fn) {
+          this.#listeners[ev] = (this.#listeners[ev] || []).filter(
+            (f) => f !== fn,
+          );
+        }
+        emit(ev, d) {
+          (this.#listeners[ev] || []).forEach((f) => f(d));
+        }
       }
-    }
 
-    // Скины
-    const bs = (S.menu_w - 60) / 5;
-    skin_btns.forEach(e => {
-      const active = e.t.text === duck.text;
-      e.bg.clear().beginFill(active ? 0x1a3a5c : col.btn).lineStyle(2, active ? 0x3498db : col.brd).drawRoundedRect(0, 0, bs, bs, 11);
-    });
-
-    // Статистика
-    if (stats_txt) {
-      const total_auto = Math.floor(S.auto * S.mult);
-      stats_txt.text = [
-        '💰 Счёт: ' + fmt(S.score),
-        '📈 Заработано всего: ' + fmt(S.t_earn),
-        '🖱️ Кликов: ' + fmt(S.t_clicks),
-        '💥 Критов: ' + fmt(S.t_crits),
-        '⚡ Авто/сек: ' + fmt(total_auto),
-        '🔥 Макс CPS: ' + S.max_cps,
-        '⭐ Золотых уток: ' + S.g_caught,
-        '♾️ Престижей: ' + S.prest_n,
-        '🎨 Скинов использовано: ' + S.skins_n,
-        '⚡ Бустов: ' + S.boosts_used,
-        '🏆 Достижений: ' + Object.keys(S.unlocked).length + '/' + ACHIEV.length,
-        '',
-        '🔓 Достижения:',
-        ...ACHIEV.map(a => (S.unlocked[a.id] ? '✅' : '🔒') + ' ' + a.icon + ' ' + a.name),
-      ].join('\n');
-      stats_txt.style.fill = col.sub;
-    }
-
-    // Обновление цветов в теме
-    app.renderer.background.color = col.bg;
-    mhdr_lbl.style.fill = col.txt;
-    mhdr_bg.clear().beginFill(col.mbg).drawRect(0, 0, S.menu_w, MENU_TOP);
-    mhdr_bg.lineStyle(1, col.brd).moveTo(0, MENU_TOP - 1).lineTo(S.menu_w, MENU_TOP - 1);
-    menu_bg.clear().beginFill(col.mbg).drawRect(0, MENU_TOP, S.menu_w, app.screen.height - MENU_TOP);
-
-    // Вкладки
-    const tw = TAB_W();
-    tab_btns.forEach(({ c, bg, t }, i) => {
-      const active = i === S.cur_tab;
-      bg.clear().beginFill(active ? 0x1a2a3a : col.btn).lineStyle(1, active ? 0x3498db : col.brd).drawRoundedRect(0, 0, tw - 6, 34, 8);
-      t.style.fill = active ? 0x3498db : col.sub;
-    });
-
-    // Подправляем альфу флоатеров под тему
-    floaters.forEach(f => {
-      const base = cur_theme === 'light' ? 0.12 : 0.05;
-      if (f.alpha < base - 0.02 || f.alpha > base + 0.14) f.alpha = base + Math.random() * 0.10;
-    });
-  };
-
-  // ─────────────────────────────────────────────
-  //  Раскладка (позиционирование элементов)
-  // ─────────────────────────────────────────────
-  const layout = () => {
-    const w = window.innerWidth;
-    const h = window.innerHeight;
-    app.renderer.resize(w, h);
-    const mob = w < 600;
-    S.menu_w = mob ? Math.floor(w * 0.90) : 370;
-
-    document.body.classList.toggle('menu-open', S.menu_open);
-
-    const btn_open = document.getElementById('btn_open');
-    btn_open.style.left = (S.menu_open ? Math.round(menu_cont.x + S.menu_w + 8) : 14) + 'px';
-
-    click_area.clear().beginFill(0, 0.001).drawRect(0, 0, w, h);
-    mask_g.clear().beginFill(0).drawRect(0, MENU_TOP, S.menu_w, h - MENU_TOP);
-
-    const cx = (S.menu_open && !mob) ? S.menu_w + (w - S.menu_w) / 2 : w / 2;
-    duck.position.set(cx, h / 2);
-    combo_lbl.position.set(cx, h * 0.12);
-    duck.style.fontSize = Math.min(w - (S.menu_open ? S.menu_w : 0), h) * 0.38;
-
-    // Заголовок меню
-    mhdr_bg.clear().beginFill(col.mbg).drawRect(0, 0, S.menu_w, MENU_TOP);
-    mhdr_bg.lineStyle(1, col.brd).moveTo(0, MENU_TOP - 1).lineTo(S.menu_w, MENU_TOP - 1);
-    mhdr_lbl.position.set(14, 10);
-
-    const tw = TAB_W();
-    const ty = 38;
-    tab_btns.forEach(({ c, bg, t }, i) => {
-      c.position.set(i * tw + 3, ty);
-      bg.clear().beginFill(i === S.cur_tab ? 0x1a2a3a : col.btn).lineStyle(1, i === S.cur_tab ? 0x3498db : col.brd).drawRoundedRect(0, 0, tw - 6, 34, 8);
-      t.position.set((tw - 6) / 2, 17);
-    });
-
-    // Показываем только активную вкладку
-    tab_contents.forEach((tc, i) => tc.visible = i === S.cur_tab);
-
-    let y0 = 10;
-
-    // Вкладка магазина
-    {
-      let y = y0;
-      shop_btns.forEach(s => { s.c.position.set(13, y); y += 63; });
-      if (prestige_row) { prestige_row.position.set(13, y); y += 62; }
-      if (shop_btns._boost) { shop_btns._boost.position.set(13, y); y += 62; }
-      tab_contents[0]._h = y + 20;
-    }
-
-    // Вкладка скинов
-    {
-      const bs = (S.menu_w - 60) / 5;
-      skin_btns.forEach((e, i) => {
-        e.b.position.set(14 + (i % 5) * (bs + 8), y0 + Math.floor(i / 5) * (bs + 8));
-        e.t.position.set(bs / 2, bs / 2);
-        e.t.style.fontSize = bs * 0.50;
-        e.bg.clear().beginFill(e.t.text === duck.text ? 0x1a3a5c : col.btn).lineStyle(2, e.t.text === duck.text ? 0x3498db : col.brd).drawRoundedRect(0, 0, bs, bs, 11);
-      });
-      tab_contents[1]._h = y0 + Math.ceil(SKINS.length / 5) * (bs + 8) + 20;
-    }
-
-    // Статистика
-    if (stats_txt) { stats_txt.style.wordWrapWidth = S.menu_w - 28; tab_contents[2]._h = stats_txt.height + 30; }
-
-    // Вкладка About
-    const about_items = tab_contents[3].children;
-    let ay = 20;
-    about_items.forEach(t => { t.x = S.menu_w / 2; t.y = ay; ay += t.height + 10; });
-    tab_contents[3]._h = ay + 20;
-
-    const vis_h = h - MENU_TOP;
-    const cur_h = tab_contents[S.cur_tab]._h || 400;
-    S.max_scroll = Math.min(0, vis_h - cur_h);
-    update_ui();
-  };
-
-  // ─────────────────────────────────────────────
-  //  Полоса прокрутки
-  // ─────────────────────────────────────────────
-  const draw_sbar = () => {
-    sbar_g.clear();
-    if (!S.menu_open || S.max_scroll >= 0) { sbar_g.visible = false; return; }
-    sbar_g.visible = true;
-    const h = app.screen.height;
-    const vis_h = h - MENU_TOP;
-    const bar_h = Math.max(36, (vis_h / (vis_h - S.max_scroll)) * vis_h);
-    const pct = S.max_scroll < 0 ? S.scroll_y / S.max_scroll : 0;
-    const bar_y = MENU_TOP + pct * (vis_h - bar_h);
-    sbar_g.beginFill(0x666666, 0.6).drawRoundedRect(S.menu_w - 7, bar_y, 4, bar_h, 2);
-  };
-
-  // ─────────────────────────────────────────────
-  //  Обработка прокрутки (мышь/палец)
-  // ─────────────────────────────────────────────
-  let drag_active = false;
-  let drag_y0 = 0;
-  menu_bg.on('pointerdown', e => { drag_active = true; drag_y0 = e.global.y; e.stopPropagation(); });
-  window.addEventListener('pointerup', () => drag_active = false);
-  window.addEventListener('pointermove', e => {
-    if (drag_active && S.menu_open) {
-      S.scroll_tgt += (e.clientY - drag_y0) * 1.2;
-      drag_y0 = e.clientY;
-    }
-  });
-  app.view.addEventListener('wheel', e => {
-    if (S.menu_open && e.clientX < S.menu_w) S.scroll_tgt -= e.deltaY;
-  }, { passive: true });
-
-  // ─────────────────────────────────────────────
-  //  Обработчики HTML‑кнопок
-  // ─────────────────────────────────────────────
-  document.getElementById('btn_open').addEventListener('pointerdown', e => {
-    e.stopPropagation();
-    S.menu_open = !S.menu_open;
-    layout();
-  });
-  document.getElementById('btn_menu').addEventListener('pointerdown', e => {
-    e.stopPropagation();
-    save();
-    show_toast('💾 Сохранено!');
-  });
-  document.getElementById('btn_theme').addEventListener('pointerdown', e => {
-    e.stopPropagation();
-    prev_theme = cur_theme;
-    theme_t = 0;
-    apply_theme(cur_theme === 'dark' ? 'light' : 'dark');
-  });
-  document.getElementById('btn_sound').addEventListener('pointerdown', e => {
-    e.stopPropagation();
-    snd_on = !snd_on;
-    document.getElementById('btn_sound').textContent = snd_on ? '🔊' : '🔇';
-  });
-
-  // ─────────────────────────────────────────────
-  //  Игровой цикл (ticker)
-  // ─────────────────────────────────────────────
-  app.ticker.add(delta => {
-    const now = Date.now();
-    const dt = delta / 60;
-
-    // Плавная смена темы
-    if (theme_t < 1) {
-      theme_t = Math.min(1, theme_t + 0.05 * delta);
-      const c1 = THEMES[prev_theme];
-      const c2 = THEMES[cur_theme];
-      col = {
-        bg: lerp_c(c1.bg, c2.bg, theme_t),
-        txt: lerp_c(c1.txt, c2.txt, theme_t),
-        mbg: lerp_c(c1.mbg, c2.mbg, theme_t),
-        btn: lerp_c(c1.btn, c2.btn, theme_t),
-        sub: lerp_c(c1.sub, c2.sub, theme_t),
-        brd: lerp_c(c1.brd, c2.brd, theme_t),
-      };
-      update_ui();
-    }
-
-    // Прокрутка
-    S.scroll_tgt = Math.max(S.max_scroll, Math.min(0, S.scroll_tgt));
-    S.scroll_y += (S.scroll_tgt - S.scroll_y) * 0.2 * delta;
-    sc.y = Math.round(S.scroll_y) + MENU_TOP;
-    draw_sbar();
-
-    // Очистка старых кликов (для CPS)
-    S.clicks = S.clicks.filter(t => now - t < 1000);
-    const cps = S.clicks.length;
-
-    // Таймеры бустов и бури
-    const ms = app.ticker.deltaMS;
-    if (S.boost_ms > 0) S.boost_ms = Math.max(0, S.boost_ms - ms);
-    if (S.boost_cd > 0) S.boost_cd = Math.max(0, S.boost_cd - ms);
-    if (S.storm_ms > 0) S.storm_ms = Math.max(0, S.storm_ms - ms);
-    if (S.storm_cd > 0) S.storm_cd = Math.max(0, S.storm_cd - ms);
-
-    // Буря кликов (автоматические клики каждые 100 мс)
-    if (S.storm_ms > 0) {
-      storm_acc += ms;
-      while (storm_acc >= 100) {
-        storm_acc -= 100;
-        const v = Math.floor(S.click_pow * S.mult * (S.boost_ms > 0 ? 3 : 1));
-        S.score += v;
-        S.t_earn += v;
-        spawn_pop('+' + fmt(v), duck.x + (Math.random() - 0.5) * 80, duck.y + (Math.random() - 0.5) * 80, 0x00ccff, 24);
-        spawn_spark();
+      // ═══════════════════════════════════════════════════════════════
+      //  AudioSvc — звуковой сервис
+      // ═══════════════════════════════════════════════════════════════
+      class AudioSvc {
+        #ctx = null;
+        #on = true;
+        play(freq, type = "sine", dur = 0.12, vol = 0.07) {
+          if (!this.#on) return;
+          try {
+            if (!this.#ctx)
+              this.#ctx = new (
+                window.AudioContext || window.webkitAudioContext
+              )();
+            const o = this.#ctx.createOscillator(),
+              g = this.#ctx.createGain();
+            o.type = type;
+            o.frequency.value = freq;
+            g.gain.setValueAtTime(vol, this.#ctx.currentTime);
+            g.gain.exponentialRampToValueAtTime(
+              0.001,
+              this.#ctx.currentTime + dur,
+            );
+            o.connect(g);
+            g.connect(this.#ctx.destination);
+            o.start();
+            o.stop(this.#ctx.currentTime + dur + 0.01);
+          } catch (e) {}
+        }
+        toggle() {
+          this.#on = !this.#on;
+          return this.#on;
+        }
+        get muted() {
+          return !this.#on;
+        }
       }
-      update_ui();
-    }
 
-    // Авто‑доход
-    S.auto_timer += ms;
-    if (S.auto_timer >= 1000 && S.auto > 0) {
-      S.auto_timer -= 1000;
-      const earned = Math.floor(S.auto * S.mult * (cps >= 8 ? 2 : 1) * (S.boost_ms > 0 ? 3 : 1));
-      S.score += earned;
-      S.t_earn += earned;
-      check_ach();
-      update_ui();
-    }
+      // ═══════════════════════════════════════════════════════════════
+      //  ThemeSvc — управление темой с плавным переходом
+      // ═══════════════════════════════════════════════════════════════
+      class ThemeSvc {
+        #cur = "dark";
+        #prev = "dark";
+        #t = 1;
+        col = {...Cfg.THEMES.dark};
 
-    // Комбо‑лейбл
-    if (cps > 2) {
-      combo_lbl.visible = true;
-      combo_lbl.text = cps >= 8 ? cps + ' FRENZY x2!' : cps + ' clk/s';
-      const j = cps >= 5 ? (Math.random() - 0.5) * cps : 0;
-      combo_lbl.position.set(duck.x + j, app.screen.height * 0.12);
-      combo_lbl.scale.set(1 + Math.sin(now / 110) * 0.09);
-      combo_lbl.style.fill = cps >= 8 ? 0xff3333 : (cps >= 5 ? 0xffa500 : 0xffff00);
-    } else {
-      combo_lbl.visible = false;
-    }
+        get name() {
+          return this.#cur;
+        }
 
-    // Анимация утки (тык, вращение)
-    S.dk_scale += (1 - S.dk_scale) * 0.2 * delta;
-    duck.scale.set(S.dk_scale);
-    S.dk_rot_vel *= Math.pow(0.88, delta);
-    S.dk_rot += S.dk_rot_vel * 0.04 * delta;
-    S.dk_rot += -S.dk_rot * 0.1 * delta;
-    duck.rotation = S.dk_rot;
+        toggle() {
+          this.#prev = this.#cur;
+          this.#cur = this.#cur === "dark" ? "light" : "dark";
+          this.#t = 0;
+          document.body.classList.toggle("light", this.#cur === "light");
+          document.getElementById("btn_theme").textContent =
+            this.#cur === "dark" ? "🌙" : "🌞";
+        }
 
-    // Тряска экрана
-    if (S.shake > 0.2) {
-      world.position.set((Math.random() - 0.5) * S.shake, (Math.random() - 0.5) * S.shake);
-      S.shake *= Math.pow(0.82, delta);
-    } else {
-      S.shake = 0;
-      world.position.set(0, 0);
-    }
+        apply(name) {
+          this.#cur = name;
+          this.#prev = name;
+          this.#t = 1;
+          this.col = {...Cfg.THEMES[name]};
+          document.body.classList.toggle("light", name === "light");
+          document.getElementById("btn_theme").textContent =
+            name === "dark" ? "🌙" : "🌞";
+        }
 
-    // Сдвиг меню
-    menu_cont.x += ((S.menu_open ? 0 : -S.menu_w) - menu_cont.x) * 0.25 * delta;
-    const open_left = S.menu_open ? Math.round(menu_cont.x + S.menu_w + 8) : 14;
-    document.getElementById('btn_open').style.left = open_left + 'px';
-
-    // Анимация всплывающих чисел (pops)
-    for (let i = pops.length - 1; i >= 0; i--) {
-      const p = pops[i];
-      p.x += p.vx * delta;
-      p.y += p.vy * delta;
-      p.vy += 0.22 * delta;
-      p.l -= 0.022 * delta;
-      p.alpha = p.l;
-      if (p.l <= 0) { p.destroy(); pops.splice(i, 1); }
-    }
-
-    // Анимация искр
-    for (let i = sparks.length - 1; i >= 0; i--) {
-      const s = sparks[i];
-      s.x += s.vx * delta;
-      s.y += s.vy * delta;
-      s.vy += 0.5 * delta;
-      s.l -= 0.032 * delta;
-      s.alpha = s.l;
-      if (s.l <= 0) { s.destroy(); sparks.splice(i, 1); }
-    }
-
-    // Тосты
-    for (let i = toasts.length - 1; i >= 0; i--) {
-      const t = toasts[i];
-      t.ttl -= dt;
-      if (t.ttl > 2.5) t.alpha = Math.min(1, (3 - t.ttl) * 6);
-      else if (t.ttl < 0.5) t.alpha = Math.max(0, t.ttl * 2);
-      if (t.ttl <= 0) { t.destroy(); toast_layer.removeChild(t); toasts.splice(i, 1); }
-    }
-
-    // Фоновые эмодзи (движение вверх)
-    for (let i = floaters.length - 1; i >= 0; i--) {
-      const f = floaters[i];
-      f.x += f.vx * delta;
-      f.y += f.vy * delta;
-      f.rotation += f.rot_v * delta;
-      if (f.y < -120) {
-        f.y = app.screen.height + 70;
-        f.x = Math.random() * app.screen.width;
+        tick(delta) {
+          if (this.#t >= 1) return false;
+          this.#t = Math.min(1, this.#t + 0.05 * delta);
+          const c1 = Cfg.THEMES[this.#prev],
+            c2 = Cfg.THEMES[this.#cur];
+          this.col = {
+            bg: Cfg.lerp_c(c1.bg, c2.bg, this.#t),
+            txt: Cfg.lerp_c(c1.txt, c2.txt, this.#t),
+            mbg: Cfg.lerp_c(c1.mbg, c2.mbg, this.#t),
+            btn: Cfg.lerp_c(c1.btn, c2.btn, this.#t),
+            sub: Cfg.lerp_c(c1.sub, c2.sub, this.#t),
+            brd: Cfg.lerp_c(c1.brd, c2.brd, this.#t),
+          };
+          return true;
+        }
       }
-    }
-    while (floaters.length < 18) spawn_floater();
 
-    // Золотая утка
-    S.g_ms += ms;
-    if (!S.g_active && S.g_ms >= S.g_next) {
-      S.g_active = true;
-      S.g_ms = 0;
-      S.g_next = (30 + Math.random() * 50) * 1000; // следующий интервал 30–80 сек
-      const m = 80;
-      const W = app.screen.width;
-      const H = app.screen.height;
-      g_duck.position.set(m + Math.random() * (W - m * 2), m + Math.random() * (H - m * 2));
-      g_duck.visible = true;
-      g_duck.alpha = 1;
-      beep(800, 'sine', 0.3, 0.1);
-      show_toast('⭐ Золотая утка! Лови!');
-    }
-    if (S.g_active) {
-      const life = 7000;          // живёт 7 секунд
-      const rem = 1 - (S.g_ms / life);
-      if (rem <= 0) {
-        S.g_active = false;
-        g_duck.visible = false;
-      } else {
-        g_duck.alpha = Math.min(1, rem * 3);
-        g_duck.scale.set(0.9 + Math.sin(now / 160) * 0.22);
-        g_duck.rotation = Math.sin(now / 380) * 0.35;
-        g_duck.x += Math.sin(now / 800) * 0.5 * delta;
-        g_duck.y += Math.cos(now / 1100) * 0.4 * delta;
+      // ═══════════════════════════════════════════════════════════════
+      //  GameState — все данные игры, без логики рендера
+      // ═══════════════════════════════════════════════════════════════
+      class GameState {
+        score = 0;
+        click_pow = 1;
+        mult = 1;
+        auto = 0;
+        crit = 0;
+        luck_mult = 1;
+        t_earn = 0;
+        t_clicks = 0;
+        t_crits = 0;
+        g_caught = 0;
+        max_cps = 0;
+        prest_n = 0;
+        prest_mult = 1;
+        skins_n = 1;
+        boosts_used = 0;
+        boost_ms = 0;
+        boost_cd = 0;
+        boost_dur = 20000;
+        storm_ms = 0;
+        storm_cd = 0;
+        upg = Object.fromEntries(
+          Object.entries(Cfg.UPGRADES).map(([k, v]) => [k, {...v, lvl: 0}]),
+        );
+        unlocked = {};
+        cur_tab = 0;
+        menu_open = false;
+        menu_w = 350;
+        scroll_y = 0;
+        scroll_tgt = 0;
+        max_scroll = 0;
+        dk_scale = 1;
+        dk_rot = 0;
+        dk_rot_vel = 0;
+        shake = 0;
+        clicks = [];
+        auto_timer = 0;
+        g_active = false;
+        g_ms = 0;
+        g_next = 45000;
       }
-    }
-  });
 
-  // ─────────────────────────────────────────────
-  //  Инициализация
-  // ─────────────────────────────────────────────
-  load();
-  duck.text = loaded_skin;
-  if (!unlocked_skins.has(loaded_skin)) {
-    unlocked_skins.add(loaded_skin);
-    S.skins_n = unlocked_skins.size;
-  }
-  init_shop();
-  init_skins();
-  init_stats();
-  init_about();
-  layout();
-  window.addEventListener('resize', layout);
+      // ═══════════════════════════════════════════════════════════════
+      //  SaveSvc — сохранение/загрузка через localStorage
+      // ═══════════════════════════════════════════════════════════════
+      class SaveSvc {
+        #KEY = "ec3";
+        #state;
+        #theme;
+        #skin_ref;
+        #unlocked_skins_ref;
 
-  if (off_gain > 0) setTimeout(() => show_toast('💤 Пока вас не было: +' + fmt(off_gain) + '!'), 500);
-</script>
-</body>
+        constructor(state, theme_svc, skin_ref, unlocked_skins_ref) {
+          this.#state = state;
+          this.#theme = theme_svc;
+          this.#skin_ref = skin_ref;
+          this.#unlocked_skins_ref = unlocked_skins_ref;
+        }
+
+        save(duck_text) {
+          const S = this.#state;
+          try {
+            localStorage.setItem(
+              this.#KEY,
+              JSON.stringify({
+                score: S.score,
+                click_pow: S.click_pow,
+                mult: S.mult,
+                auto: S.auto,
+                crit: S.crit,
+                t_earn: S.t_earn,
+                t_clicks: S.t_clicks,
+                t_crits: S.t_crits,
+                g_caught: S.g_caught,
+                max_cps: S.max_cps,
+                prest_n: S.prest_n,
+                prest_mult: S.prest_mult,
+                skins_n: S.skins_n,
+                boosts_used: S.boosts_used,
+                luck_mult: S.luck_mult,
+                unlocked: S.unlocked,
+                theme: this.#theme.name,
+                unlocked_skins: Array.from(this.#unlocked_skins_ref),
+                upg: Object.fromEntries(
+                  Object.entries(S.upg).map(([k, v]) => [k, {lvl: v.lvl}]),
+                ),
+                dk: duck_text || "🦆",
+                ts: Date.now(),
+              }),
+            );
+          } catch (e) {}
+        }
+
+        load() {
+          const S = this.#state;
+          let off_gain = 0;
+          try {
+            const raw = localStorage.getItem(this.#KEY);
+            if (!raw) return 0;
+            const d = JSON.parse(raw);
+            [
+              "score",
+              "click_pow",
+              "mult",
+              "auto",
+              "crit",
+              "t_earn",
+              "t_clicks",
+              "t_crits",
+              "g_caught",
+              "max_cps",
+              "prest_n",
+              "prest_mult",
+              "skins_n",
+              "boosts_used",
+              "luck_mult",
+              "unlocked",
+            ].forEach((k) => {
+              if (d[k] !== undefined) S[k] = d[k];
+            });
+            if (d.upg)
+              Object.keys(d.upg).forEach((k) => {
+                if (S.upg[k]) S.upg[k].lvl = d.upg[k].lvl || 0;
+              });
+            if (d.theme) this.#theme.apply(d.theme);
+            if (d.dk) this.#skin_ref.value = d.dk;
+            if (d.unlocked_skins?.length) {
+              d.unlocked_skins.forEach((s) => this.#unlocked_skins_ref.add(s));
+              S.skins_n = this.#unlocked_skins_ref.size;
+            }
+            if (d.ts && S.auto > 0) {
+              const secs = Math.min((Date.now() - d.ts) / 1000, 3600);
+              off_gain = Math.floor(secs * S.auto * S.mult);
+              if (off_gain > 0) {
+                S.score += off_gain;
+                S.t_earn += off_gain;
+              }
+            }
+          } catch (e) {}
+          return off_gain;
+        }
+      }
+
+      // ═══════════════════════════════════════════════════════════════
+      //  RenderSys — PIXI инициализация, слои сцены
+      // ═══════════════════════════════════════════════════════════════
+      class RenderSys {
+        app;
+        bg_layer;
+        world;
+        menu_cont;
+        ui_layer;
+        scroll_cont;
+        mask_g;
+        sbar_g;
+        menu_bg;
+        click_area;
+        duck;
+        g_duck;
+        combo_lbl;
+        toast_layer;
+
+        constructor() {
+          this.app = new PIXI.Application({
+            backgroundColor: 0x0a0a0a,
+            antialias: true,
+            autoDensity: true,
+            resolution: window.devicePixelRatio || 1,
+          });
+          document.body.insertBefore(
+            this.app.view,
+            document.getElementById("hud"),
+          );
+
+          this.bg_layer = new PIXI.Container();
+          this.world = new PIXI.Container();
+          this.menu_cont = new PIXI.Container();
+          this.ui_layer = new PIXI.Container();
+          this.scroll_cont = new PIXI.Container();
+          this.mask_g = new PIXI.Graphics();
+          this.sbar_g = new PIXI.Graphics();
+          this.menu_bg = new PIXI.Graphics();
+          this.click_area = new PIXI.Graphics();
+
+          this.menu_bg.eventMode = "static";
+          this.mask_g.eventMode = "none";
+          this.click_area.eventMode = "static";
+          this.click_area.cursor = "pointer";
+
+          this.app.stage.addChild(
+            this.bg_layer,
+            this.world,
+            this.menu_cont,
+            this.ui_layer,
+          );
+          this.menu_cont.addChild(
+            this.menu_bg,
+            this.scroll_cont,
+            this.mask_g,
+            this.sbar_g,
+          );
+          this.scroll_cont.mask = this.mask_g;
+          this.world.addChild(this.click_area);
+
+          this.duck = new PIXI.Text("🦆", {fontSize: 160});
+          this.duck.anchor.set(0.5);
+          this.world.addChild(this.duck);
+
+          this.g_duck = new PIXI.Text("⭐", {fontSize: 64});
+          this.g_duck.anchor.set(0.5);
+          this.g_duck.visible = false;
+          this.g_duck.eventMode = "static";
+          this.g_duck.cursor = "pointer";
+          this.world.addChild(this.g_duck);
+
+          this.combo_lbl = new PIXI.Text("", {
+            fontSize: 40,
+            fill: 0xffa500,
+            fontWeight: "900",
+            strokeThickness: 5,
+            stroke: 0,
+          });
+          this.combo_lbl.anchor.set(0.5);
+          this.combo_lbl.visible = false;
+          this.ui_layer.addChild(this.combo_lbl);
+
+          this.toast_layer = new PIXI.Container();
+          this.ui_layer.addChild(this.toast_layer);
+        }
+
+        get screen() {
+          return this.app.screen;
+        }
+        resize(w, h) {
+          this.app.renderer.resize(w, h);
+        }
+        set_bg(color) {
+          this.app.renderer.background.color = color;
+        }
+      }
+
+      // ═══════════════════════════════════════════════════════════════
+      //  ToastSys — всплывающие уведомления
+      // ═══════════════════════════════════════════════════════════════
+      class ToastSys {
+        #render;
+        #list = [];
+
+        constructor(render_sys) {
+          this.#render = render_sys;
+        }
+
+        show(txt) {
+          const t = new PIXI.Text(txt, {
+            fontSize: 18,
+            fill: 0xffffff,
+            fontWeight: "900",
+            stroke: 0x000000,
+            strokeThickness: 5,
+            align: "center",
+          });
+          t.anchor.set(0.5);
+          t.position.set(
+            this.#render.screen.width / 2,
+            this.#render.screen.height * 0.8 - this.#list.length * 44,
+          );
+          t.alpha = 0;
+          t.ttl = 3.0;
+          this.#render.toast_layer.addChild(t);
+          this.#list.push(t);
+        }
+
+        tick(dt) {
+          for (let i = this.#list.length - 1; i >= 0; i--) {
+            const t = this.#list[i];
+            t.ttl -= dt;
+            if (t.ttl > 2.5) t.alpha = Math.min(1, (3 - t.ttl) * 6);
+            else if (t.ttl < 0.5) t.alpha = Math.max(0, t.ttl * 2);
+            if (t.ttl <= 0) {
+              t.destroy();
+              this.#render.toast_layer.removeChild(t);
+              this.#list.splice(i, 1);
+            }
+          }
+        }
+      }
+
+      // ═══════════════════════════════════════════════════════════════
+      //  FloaterSys — фоновые плавающие эмодзи
+      // ═══════════════════════════════════════════════════════════════
+      class FloaterSys {
+        #render;
+        #theme;
+        #list = [];
+
+        constructor(render_sys, theme_svc) {
+          this.#render = render_sys;
+          this.#theme = theme_svc;
+          for (let i = 0; i < 16; i++) this.#spawn(Math.random() * 2200);
+        }
+
+        #spawn(start_y) {
+          const t = new PIXI.Text(
+            Cfg.BG_EM[Math.floor(Math.random() * Cfg.BG_EM.length)],
+            {fontSize: 50 + Math.random() * 90},
+          );
+          t.anchor.set(0.5);
+          t.x = Math.random() * this.#render.screen.width;
+          t.y = start_y ?? this.#render.screen.height + 80;
+          t.alpha =
+            this.#theme.name === "light"
+              ? 0.12 + Math.random() * 0.12
+              : 0.05 + Math.random() * 0.1;
+          t.vx = (Math.random() - 0.5) * 0.35;
+          t.vy = -(0.2 + Math.random() * 0.45);
+          t.rot_v = (Math.random() - 0.5) * 0.003;
+          this.#render.bg_layer.addChild(t);
+          this.#list.push(t);
+        }
+
+        tick(delta) {
+          const base = this.#theme.name === "light" ? 0.12 : 0.05;
+          this.#list.forEach((f) => {
+            f.x += f.vx * delta;
+            f.y += f.vy * delta;
+            f.rotation += f.rot_v * delta;
+            if (f.alpha < base - 0.02 || f.alpha > base + 0.14)
+              f.alpha = base + Math.random() * 0.1;
+            if (f.y < -120) {
+              f.y = this.#render.screen.height + 70;
+              f.x = Math.random() * this.#render.screen.width;
+            }
+          });
+          while (this.#list.length < 18) this.#spawn();
+        }
+      }
+
+      // ═══════════════════════════════════════════════════════════════
+      //  ParticleSys — числа и искры при клике (object pool)
+      // ═══════════════════════════════════════════════════════════════
+      class ParticleSys {
+        #render;
+        #pops = [];
+        #sparks = [];
+        #duck_ref;
+
+        constructor(render_sys, duck_ref) {
+          this.#render = render_sys;
+          this.#duck_ref = duck_ref;
+        }
+
+        pop(txt, x, y, fill, size) {
+          const p = new PIXI.Text(txt, {
+            fontSize: size,
+            fill,
+            fontWeight: "900",
+            strokeThickness: 4,
+            stroke: 0,
+          });
+          p.position.set(x, y);
+          p.anchor.set(0.5);
+          p.l = 1;
+          p.vy = -5;
+          p.vx = (Math.random() - 0.5) * 4;
+          this.#render.world.addChild(p);
+          this.#pops.push(p);
+        }
+
+        spark() {
+          const em =
+            Cfg.SPARK_EM[Math.floor(Math.random() * Cfg.SPARK_EM.length)];
+          const dk = this.#duck_ref;
+          const s = new PIXI.Text(em, {fontSize: 16 + Math.random() * 12});
+          s.position.set(
+            dk.x + (Math.random() - 0.5) * 140,
+            dk.y + (Math.random() - 0.5) * 140,
+          );
+          s.vx = (Math.random() - 0.5) * 18;
+          s.vy = (Math.random() - 0.5) * 14 - 7;
+          s.l = 1;
+          this.#render.world.addChild(s);
+          this.#sparks.push(s);
+        }
+
+        tick(delta) {
+          for (let i = this.#pops.length - 1; i >= 0; i--) {
+            const p = this.#pops[i];
+            p.x += p.vx * delta;
+            p.y += p.vy * delta;
+            p.vy += 0.22 * delta;
+            p.l -= 0.022 * delta;
+            p.alpha = p.l;
+            if (p.l <= 0) {
+              p.destroy();
+              this.#pops.splice(i, 1);
+            }
+          }
+          for (let i = this.#sparks.length - 1; i >= 0; i--) {
+            const s = this.#sparks[i];
+            s.x += s.vx * delta;
+            s.y += s.vy * delta;
+            s.vy += 0.5 * delta;
+            s.l -= 0.032 * delta;
+            s.alpha = s.l;
+            if (s.l <= 0) {
+              s.destroy();
+              this.#sparks.splice(i, 1);
+            }
+          }
+        }
+      }
+
+      // ═══════════════════════════════════════════════════════════════
+      //  GoldDuckSys — золотая утка
+      // ═══════════════════════════════════════════════════════════════
+      class GoldDuckSys {
+        #state;
+        #render;
+        #particle;
+        #audio;
+        #bus;
+        #toast;
+
+        constructor(
+          state,
+          render_sys,
+          particle_sys,
+          audio_svc,
+          event_bus,
+          toast_sys,
+        ) {
+          this.#state = state;
+          this.#render = render_sys;
+          this.#particle = particle_sys;
+          this.#audio = audio_svc;
+          this.#bus = event_bus;
+          this.#toast = toast_sys;
+
+          render_sys.g_duck.on("pointerdown", (e) => {
+            e.stopPropagation();
+            if (!state.g_active) return;
+            const b = Math.max(
+              200,
+              Math.floor(
+                state.score * 0.1 + state.click_pow * state.mult * 200,
+              ),
+            );
+            state.score += b;
+            state.t_earn += b;
+            state.g_caught++;
+            state.g_active = false;
+            render_sys.g_duck.visible = false;
+            state.shake = 18;
+            audio_svc.play(1200, "sine", 0.5, 0.18);
+            particle_sys.pop(
+              "+" + Cfg.fmt(b) + "!",
+              render_sys.g_duck.x,
+              render_sys.g_duck.y,
+              0xffd700,
+              54,
+            );
+            event_bus.emit("ach_check");
+            event_bus.emit("ui_update");
+          });
+        }
+
+        tick(ms, now) {
+          const S = this.#state,
+            gd = this.#render.g_duck;
+          S.g_ms += ms;
+          if (!S.g_active && S.g_ms >= S.g_next) {
+            S.g_active = true;
+            S.g_ms = 0;
+            S.g_next = (30 + Math.random() * 50) * 1000;
+            const m = 80,
+              W = this.#render.screen.width,
+              H = this.#render.screen.height;
+            gd.position.set(
+              m + Math.random() * (W - m * 2),
+              m + Math.random() * (H - m * 2),
+            );
+            gd.visible = true;
+            gd.alpha = 1;
+            this.#audio.play(800, "sine", 0.3, 0.1);
+            this.#toast.show("⭐ Золотая утка! Лови!");
+          }
+          if (S.g_active) {
+            const rem = 1 - S.g_ms / 7000;
+            if (rem <= 0) {
+              S.g_active = false;
+              gd.visible = false;
+            } else {
+              gd.alpha = Math.min(1, rem * 3);
+              gd.scale.set(0.9 + Math.sin(now / 160) * 0.22);
+              gd.rotation = Math.sin(now / 380) * 0.35;
+              gd.x += Math.sin(now / 800) * 0.5;
+              gd.y += Math.cos(now / 1100) * 0.4;
+            }
+          }
+        }
+      }
+
+      // ═══════════════════════════════════════════════════════════════
+      //  ShopView — вкладка магазина (кнопки улучшений)
+      // ═══════════════════════════════════════════════════════════════
+      class ShopView {
+        cont;
+        _h = 0;
+        #rows = [];
+        #prestige_row;
+        #boost_row;
+        #state;
+        #audio;
+        #bus;
+        #theme;
+        #toast;
+
+        constructor(state, audio_svc, event_bus, theme_svc, toast_sys) {
+          this.#state = state;
+          this.#audio = audio_svc;
+          this.#bus = event_bus;
+          this.#theme = theme_svc;
+          this.#toast = toast_sys;
+          this.cont = new PIXI.Container();
+          this.#build_upgrades();
+          this.#build_prestige();
+          this.#build_boost();
+        }
+
+        #mk_row(lbl_text, sub_text, on_click) {
+          const c = new PIXI.Container();
+          c.eventMode = "static";
+          c.cursor = "pointer";
+          const bg = new PIXI.Graphics();
+          const tl = new PIXI.Text("", {fontSize: 14, fontWeight: "bold"});
+          const ds = new PIXI.Text("", {fontSize: 10});
+          const pr = new PIXI.Text("", {fontSize: 13, fontWeight: "bold"});
+          tl.position.set(10, 7);
+          ds.position.set(10, 31);
+          c.addChild(bg, tl, ds, pr);
+          this.cont.addChild(c);
+          c.on("pointerdown", (e) => {
+            e.stopPropagation();
+            on_click();
+          });
+          return {c, bg, tl, ds, pr};
+        }
+
+        #build_upgrades() {
+          Object.keys(this.#state.upg).forEach((id) => {
+            const row = this.#mk_row("", " ", () => {
+              const S = this.#state,
+                u = S.upg[id],
+                price = Cfg.upg_price(u);
+              if (S.score < price || (id === "crit" && S.crit >= 0.35)) return;
+              S.score -= price;
+              u.lvl++;
+              if (id === "power") S.click_pow++;
+              else if (id === "auto") S.auto++;
+              else if (id === "pond") S.auto += 20;
+              else if (id === "farm") S.auto += 120;
+              else if (id === "factory") S.auto += 600;
+              else if (id === "lab") S.auto += 3000;
+              else if (id === "mult") S.mult *= 2;
+              else if (id === "crit") S.crit = Math.min(0.35, S.crit + 0.05);
+              else if (id === "luck") S.luck_mult = 1 + u.lvl * 0.1;
+              this.#audio.play(523, "sine", 0.14, 0.08);
+              this.#bus.emit("ach_check");
+              this.#bus.emit("ui_update");
+            });
+            row.id = id;
+            this.#rows.push(row);
+          });
+        }
+
+        #build_prestige() {
+          const c = new PIXI.Container();
+          c.eventMode = "static";
+          c.cursor = "pointer";
+          const bg = new PIXI.Graphics();
+          const tl = new PIXI.Text("✨ ПРЕСТИЖ", {
+            fontSize: 14,
+            fontWeight: "900",
+            fill: 0xffd700,
+          });
+          const ds = new PIXI.Text("", {fontSize: 10, fill: 0xaaaaaa});
+          tl.position.set(10, 7);
+          ds.position.set(10, 29);
+          c.addChild(bg, tl, ds);
+          this.cont.addChild(c);
+          c.on("pointerdown", (e) => {
+            e.stopPropagation();
+            this.#do_prestige();
+          });
+          this.#prestige_row = {c, bg, tl, ds};
+        }
+
+        #do_prestige() {
+          const S = this.#state;
+          if (S.t_earn < 1e9) return;
+          S.prest_n++;
+          S.prest_mult = 1 + S.prest_n * 0.5;
+          const keep = {...S.unlocked},
+            sk = S.skins_n;
+          S.score = 0;
+          S.click_pow = 1;
+          S.mult = S.prest_mult;
+          S.auto = 0;
+          S.crit = 0;
+          S.luck_mult = 1;
+          S.t_earn = 0;
+          S.t_clicks = 0;
+          S.max_cps = 0;
+          S.g_caught = 0;
+          S.t_crits = 0;
+          Object.values(S.upg).forEach((u) => (u.lvl = 0));
+          S.unlocked = keep;
+          S.skins_n = sk;
+          this.#audio.play(880, "sine", 0.7, 0.15);
+          this.#toast.show(
+            "✨ Престиж! x" + S.prest_mult.toFixed(1) + " навсегда!",
+          );
+          this.#bus.emit("ui_update");
+        }
+
+        #build_boost() {
+          const c = new PIXI.Container();
+          c.eventMode = "static";
+          c.cursor = "pointer";
+          const bg = new PIXI.Graphics();
+          const tl = new PIXI.Text("⚡ БУСТ ×3 (20с)", {
+            fontSize: 14,
+            fontWeight: "900",
+            fill: 0x00ccff,
+          });
+          const ds = new PIXI.Text("Утроить доход на 20 секунд", {
+            fontSize: 10,
+            fill: 0xaaaaaa,
+          });
+          tl.position.set(10, 7);
+          ds.position.set(10, 29);
+          c.addChild(bg, tl, ds);
+          this.cont.addChild(c);
+          c.on("pointerdown", (e) => {
+            e.stopPropagation();
+            this.#use_boost();
+          });
+          this.#boost_row = {c, bg, tl, ds};
+        }
+
+        #use_boost() {
+          const S = this.#state;
+          if (S.boost_ms > 0 || S.boost_cd > 0) return;
+          const cost = Math.floor(Math.max(1000, S.auto * S.mult * 5));
+          if (S.score < cost) return;
+          S.score -= cost;
+          S.boost_ms = S.boost_dur;
+          S.boost_cd = 90000;
+          S.boosts_used++;
+          this.#audio.play(880, "sine", 0.3, 0.12);
+          this.#toast.show("⚡ БУСТ АКТИВЕН 20с!");
+          this.#bus.emit("ach_check");
+          this.#bus.emit("ui_update");
+        }
+
+        render(menu_w, col, is_light = false) {
+          const S = this.#state;
+          this.#rows.forEach((row) => {
+            const u = S.upg[row.id];
+            const is_max = row.id === "crit" && S.crit >= 0.35;
+            const price = Cfg.upg_price(u),
+              can = S.score >= price && !is_max;
+            row.tl.text = u.lbl + "  [" + u.lvl + "]";
+            row.tl.style.fill = col.txt;
+            row.ds.text = is_max ? "MAX" : u.sub;
+            row.ds.style.fill = col.sub;
+            row.pr.text = is_max ? "" : Cfg.fmt(price) + " 💰";
+            row.pr.style.fill = can ? 0x2ecc71 : 0xe74c3c;
+            row.pr.position.set(menu_w - row.pr.width - 38, 18);
+            const fill = is_light ? 0xffffff : col.btn;
+            row.bg
+              .clear()
+              .beginFill(fill, is_light ? 0.7 : 1)
+              .lineStyle(2, can ? 0x2ecc71 : col.brd)
+              .drawRoundedRect(0, 0, menu_w - 26, 54, 11);
+          });
+
+          const pr = this.#prestige_row,
+            can_p = S.t_earn >= 1e9;
+          pr.c.visible = can_p || S.prest_n > 0;
+          if (pr.c.visible) {
+            const nm = (1 + (S.prest_n + 1) * 0.5).toFixed(1);
+            pr.ds.text = can_p
+              ? "Сброс → x" + nm + " навсегда!"
+              : "Нужно 1B (" + Cfg.fmt(S.t_earn) + ")";
+            const fill = can_p
+              ? is_light
+                ? 0xfff8e0
+                : 0x2e2000
+              : is_light
+                ? 0xffffff
+                : col.btn;
+            pr.bg
+              .clear()
+              .beginFill(fill, is_light ? 0.8 : 1)
+              .lineStyle(2, can_p ? 0xffd700 : col.brd)
+              .drawRoundedRect(0, 0, menu_w - 26, 52, 11);
+          }
+
+          const bst = this.#boost_row,
+            cd = S.boost_cd > 0;
+          const cost = Math.floor(Math.max(1000, S.auto * S.mult * 5));
+          const can_b = !cd && S.score >= cost && S.boost_ms <= 0;
+          bst.tl.text =
+            S.boost_ms > 0
+              ? "⚡ АКТИВЕН " + Cfg.sec(S.boost_ms) + "с"
+              : cd
+                ? "⏳ КД " + Cfg.sec(S.boost_cd) + "с"
+                : "⚡ БУСТ ×3 (" + Cfg.fmt(cost) + " 💰)";
+          const bst_fill = is_light ? 0xffffff : col.btn;
+          bst.bg
+            .clear()
+            .beginFill(bst_fill, is_light ? 0.7 : 1)
+            .lineStyle(2, can_b ? 0x00ccff : col.brd)
+            .drawRoundedRect(0, 0, menu_w - 26, 54, 11);
+        }
+
+        layout(menu_w) {
+          let y = 10;
+          this.#rows.forEach((r) => {
+            r.c.position.set(13, y);
+            y += 63;
+          });
+          const pr = this.#prestige_row;
+          pr.c.position.set(13, y);
+          if (pr.c.visible) y += 62;
+          this.#boost_row.c.position.set(13, y);
+          y += 62;
+          this._h = y + 20;
+        }
+      }
+
+      // ═══════════════════════════════════════════════════════════════
+      //  SkinsView — вкладка скинов
+      // ═══════════════════════════════════════════════════════════════
+      class SkinsView {
+        cont;
+        _h = 0;
+        #rows = [];
+        #duck_ref;
+        #unlocked;
+        #state;
+        #bus;
+
+        constructor(state, event_bus, duck_ref, unlocked_skins) {
+          this.#state = state;
+          this.#bus = event_bus;
+          this.#duck_ref = duck_ref;
+          this.#unlocked = unlocked_skins;
+          this.cont = new PIXI.Container();
+          Cfg.SKINS.forEach((em) => {
+            const b = new PIXI.Container();
+            b.eventMode = "static";
+            b.cursor = "pointer";
+            const bg = new PIXI.Graphics(),
+              t = new PIXI.Text(em, {fontSize: 26});
+            t.anchor.set(0.5);
+            b.addChild(bg, t);
+            b.on("pointerdown", (ev) => {
+              ev.stopPropagation();
+              duck_ref.text = em;
+              state.shake = 5;
+              if (!unlocked_skins.has(em)) {
+                unlocked_skins.add(em);
+                state.skins_n = unlocked_skins.size;
+              }
+              event_bus.emit("ach_check");
+              event_bus.emit("ui_update");
+            });
+            this.cont.addChild(b);
+            this.#rows.push({b, bg, t});
+          });
+        }
+
+        render(menu_w, col) {
+          const bs = (menu_w - 60) / 5;
+          this.#rows.forEach((e) => {
+            const active = e.t.text === this.#duck_ref.text;
+            e.bg
+              .clear()
+              .beginFill(active ? 0x1a3a5c : col.btn)
+              .lineStyle(2, active ? 0x3498db : col.brd)
+              .drawRoundedRect(0, 0, bs, bs, 11);
+          });
+        }
+
+        layout(menu_w) {
+          const bs = (menu_w - 60) / 5;
+          this.#rows.forEach((e, i) => {
+            e.b.position.set(
+              14 + (i % 5) * (bs + 8),
+              10 + Math.floor(i / 5) * (bs + 8),
+            );
+            e.t.position.set(bs / 2, bs / 2);
+            e.t.style.fontSize = bs * 0.5;
+          });
+          this._h = 10 + Math.ceil(Cfg.SKINS.length / 5) * (bs + 8) + 20;
+        }
+      }
+
+      // ═══════════════════════════════════════════════════════════════
+      //  StatsView — статистика: карточки 2×N + достижения
+      // ═══════════════════════════════════════════════════════════════
+      class StatsView {
+        cont;
+        _h = 0;
+        #state;
+        #cards = [];
+        #sec_lbl;
+        #ach_rows = [];
+        // карточки: {bg, ico_t, val_t, lbl_t}
+        static #CARD_DEFS = [
+          {ico: "💰", lbl: "Счёт", key: "score"},
+          {ico: "📈", lbl: "Заработано", key: "t_earn"},
+          {ico: "🖱️", lbl: "Кликов", key: "t_clicks"},
+          {ico: "💥", lbl: "Критов", key: "t_crits"},
+          {ico: "🤖", lbl: "Авто/сек", key: "_auto_ps"},
+          {ico: "🔥", lbl: "Макс CPS", key: "max_cps"},
+          {ico: "⭐", lbl: "Золот. утки", key: "g_caught"},
+          {ico: "♾️", lbl: "Престижей", key: "prest_n"},
+          {ico: "🎨", lbl: "Скинов", key: "skins_n"},
+          {ico: "⚡", lbl: "Бустов", key: "boosts_used"},
+        ];
+
+        constructor(state) {
+          this.#state = state;
+          this.cont = new PIXI.Container();
+
+          StatsView.#CARD_DEFS.forEach(() => {
+            const bg = new PIXI.Graphics();
+            const ico_t = new PIXI.Text("", {fontSize: 22});
+            const val_t = new PIXI.Text("", {
+              fontSize: 15,
+              fontWeight: "900",
+              fill: 0xffffff,
+            });
+            const lbl_t = new PIXI.Text("", {fontSize: 10, fill: 0x888888});
+            ico_t.anchor.set(0.5, 0);
+            val_t.anchor.set(0.5, 0);
+            lbl_t.anchor.set(0.5, 0);
+            this.cont.addChild(bg, ico_t, val_t, lbl_t);
+            this.#cards.push({bg, ico_t, val_t, lbl_t});
+          });
+
+          this.#sec_lbl = new PIXI.Text("ДОСТИЖЕНИЯ", {
+            fontSize: 12,
+            fontWeight: "900",
+            fill: 0x888888,
+          });
+          this.cont.addChild(this.#sec_lbl);
+
+          Cfg.ACHIEV.forEach((a) => {
+            const row = new PIXI.Container();
+            const bg = new PIXI.Graphics();
+            const ico = new PIXI.Text(a.ico, {fontSize: 14});
+            const nm = new PIXI.Text(a.name, {
+              fontSize: 11,
+              fontWeight: "bold",
+            });
+            const mk = new PIXI.Text("🔒", {fontSize: 11});
+            ico.position.set(8, 6);
+            nm.position.set(32, 7);
+            row.addChild(bg, ico, nm, mk);
+            this.cont.addChild(row);
+            this.#ach_rows.push({row, bg, nm, mk, id: a.id});
+          });
+        }
+
+        render(menu_w, col, is_light = false) {
+          const S = this.#state;
+          const ps = Math.floor(S.auto * S.mult * (S.boost_ms > 0 ? 3 : 1));
+          const vals = {...S, _auto_ps: ps};
+          const cw = (menu_w - 14 * 3) / 2;
+
+          StatsView.#CARD_DEFS.forEach((def, i) => {
+            const c = this.#cards[i];
+            c.ico_t.text = def.ico;
+            c.val_t.text = Cfg.fmt(vals[def.key] ?? 0);
+            c.lbl_t.text = def.lbl;
+            c.val_t.style.fill = col.txt;
+            c.lbl_t.style.fill = col.sub;
+            const card_fill = is_light ? 0xffffff : col.btn;
+            c.bg
+              .clear()
+              .beginFill(card_fill, is_light ? 0.75 : 0.9)
+              .lineStyle(1, col.brd)
+              .drawRoundedRect(0, 0, cw, 64, 10);
+          });
+
+          this.#sec_lbl.style.fill = col.sub;
+
+          const aw = menu_w - 28;
+          this.#ach_rows.forEach((r) => {
+            const done = !!S.unlocked[r.id];
+            const done_fill = is_light ? 0xe0f5e0 : 0x0d280d;
+            r.bg
+              .clear()
+              .beginFill(
+                done ? done_fill : is_light ? 0xffffff : col.btn,
+                done ? 1 : 0.5,
+              )
+              .lineStyle(1, done ? 0x2ecc71 : col.brd)
+              .drawRoundedRect(0, 0, aw, 32, 7);
+            r.nm.style.fill = done ? (is_light ? 0x1a7a1a : 0x2ecc71) : col.sub;
+            r.mk.text = done ? "✅" : "🔒";
+            r.mk.position.set(aw - 24, 8);
+          });
+          this._h = this.#_compute_h(menu_w);
+        }
+
+        layout(menu_w) {
+          const cw = (menu_w - 14 * 3) / 2;
+          const cx = (i) => 14 + (i % 2) * (cw + 14);
+          const cy = (i) => 14 + Math.floor(i / 2) * 76;
+          this.#cards.forEach(({bg, ico_t, val_t, lbl_t}, i) => {
+            const x = cx(i),
+              y = cy(i);
+            bg.position.set(x, y);
+            ico_t.position.set(x + cw / 2, y + 8);
+            val_t.position.set(x + cw / 2, y + 34);
+            lbl_t.position.set(x + cw / 2, y + 51);
+          });
+          const rows = Math.ceil(StatsView.#CARD_DEFS.length / 2);
+          const sec_y = 14 + rows * 76 + 8;
+          this.#sec_lbl.position.set(14, sec_y);
+          let ay = sec_y + 20;
+          this.#ach_rows.forEach((r) => {
+            r.row.position.set(14, ay);
+            ay += 38;
+          });
+          this._h = ay + 16;
+        }
+
+        #_compute_h(menu_w) {
+          const rows = Math.ceil(StatsView.#CARD_DEFS.length / 2);
+          return 14 + rows * 76 + 28 + this.#ach_rows.length * 38 + 16;
+        }
+      }
+
+      // ═══════════════════════════════════════════════════════════════
+      //  AboutView — вкладка "об игре"
+      // ═══════════════════════════════════════════════════════════════
+      class AboutView {
+        cont;
+        _h = 0;
+        #items = [];
+
+        constructor() {
+          this.cont = new PIXI.Container();
+          const lines = [
+            {txt: "👾", sz: 72, fill: 0xffffff},
+            {txt: "redeflesq", sz: 28, fill: 0x00ccff},
+            {txt: "Разработчик игры", sz: 14, fill: 0x888888},
+            {txt: "v3.0  2025", sz: 12, fill: 0x444455},
+            {txt: "", sz: 12, fill: 0x444455},
+            {txt: "Советы:", sz: 15, fill: 0xffd700},
+            {txt: "• Жми быстро — FRENZY x2!", sz: 12, fill: 0x888888},
+            {txt: "• Лови ⭐ — бонус 10% счёта", sz: 12, fill: 0x888888},
+            {txt: "• Престиж даёт x1.5 навсегда", sz: 12, fill: 0x888888},
+            {txt: "• Буст ×3 — юзай чаще!", sz: 12, fill: 0x888888},
+            {txt: "• Лаба — лучший авто в игре", sz: 12, fill: 0x888888},
+          ];
+          let y = 20;
+          lines.forEach((l) => {
+            const t = new PIXI.Text(l.txt, {
+              fontSize: l.sz,
+              fill: l.fill,
+              fontWeight: "bold",
+              align: "center",
+            });
+            t.anchor.set(0.5, 0);
+            t.y = y;
+            this.cont.addChild(t);
+            this.#items.push(t);
+            y += l.sz + 10;
+          });
+          this._h = y + 20;
+        }
+
+        layout(menu_w) {
+          this.#items.forEach((t) => {
+            t.x = menu_w / 2;
+          });
+          let y = 20;
+          this.#items.forEach((t) => {
+            t.y = y;
+            y += t.style.fontSize + 10;
+          });
+          this._h = y + 20;
+        }
+      }
+
+      // ═══════════════════════════════════════════════════════════════
+      //  MenuCtrl — заголовок, вкладки, прокрутка, layout
+      // ═══════════════════════════════════════════════════════════════
+      class MenuCtrl {
+        #state;
+        #render;
+        #theme;
+        #shop;
+        #skins;
+        #stats;
+        #about;
+        #tabs = [];
+        #tab_conts = [];
+        #mhdr_bg;
+        #mhdr_lbl;
+
+        constructor(
+          state,
+          render_sys,
+          theme_svc,
+          shop_view,
+          skins_view,
+          stats_view,
+          about_view,
+        ) {
+          this.#state = state;
+          this.#render = render_sys;
+          this.#theme = theme_svc;
+          this.#shop = shop_view;
+          this.#skins = skins_view;
+          this.#stats = stats_view;
+          this.#about = about_view;
+
+          this.#mhdr_bg = new PIXI.Graphics();
+          this.#mhdr_lbl = new PIXI.Text("EMOJI CLICKER", {
+            fontSize: 15,
+            fontWeight: "900",
+            fill: 0xffffff,
+          });
+          render_sys.menu_cont.addChild(this.#mhdr_bg, this.#mhdr_lbl);
+
+          Cfg.TAB_NAMES.forEach((nm, i) => {
+            const c = new PIXI.Container();
+            c.eventMode = "static";
+            c.cursor = "pointer";
+            const bg = new PIXI.Graphics();
+            const t = new PIXI.Text(nm, {
+              fontSize: 11,
+              fontWeight: "bold",
+              align: "center",
+            });
+            t.anchor.set(0.5);
+            c.addChild(bg, t);
+            render_sys.menu_cont.addChild(c);
+            c.on("pointerdown", (e) => {
+              e.stopPropagation();
+              state.cur_tab = i;
+              this.layout();
+            });
+            this.#tabs.push({c, bg, t});
+          });
+
+          [shop_view, skins_view, stats_view, about_view].forEach((v) => {
+            render_sys.scroll_cont.addChild(v.cont);
+            this.#tab_conts.push(v.cont);
+          });
+        }
+
+        render() {
+          const S = this.#state,
+            col = this.#theme.col,
+            mw = S.menu_w;
+          const tw = mw / Cfg.TAB_NAMES.length;
+          const is_light = this.#theme.name === "light";
+
+          this.#render.set_bg(col.bg);
+          this.#mhdr_bg
+            .clear()
+            .beginFill(col.mbg)
+            .drawRect(0, 0, mw, Cfg.MENU_TOP);
+          this.#mhdr_bg
+            .lineStyle(1, col.brd)
+            .moveTo(0, Cfg.MENU_TOP - 1)
+            .lineTo(mw, Cfg.MENU_TOP - 1);
+          this.#mhdr_lbl.style.fill = col.txt;
+          this.#render.menu_bg
+            .clear()
+            .beginFill(col.mbg)
+            .drawRect(
+              0,
+              Cfg.MENU_TOP,
+              mw,
+              this.#render.screen.height - Cfg.MENU_TOP,
+            );
+
+          const tab_act_fill = is_light ? 0xd6e8ff : 0x1a2a3a;
+          const tab_act_brd = is_light ? 0x4a90d9 : 0x3498db;
+          this.#tabs.forEach(({c, bg, t}, i) => {
+            const act = i === S.cur_tab;
+            bg.clear()
+              .beginFill(act ? tab_act_fill : col.btn, act ? 1 : 0.6)
+              .lineStyle(1, act ? tab_act_brd : col.brd)
+              .drawRoundedRect(0, 0, tw - 6, 34, 8);
+            t.style.fill = act ? tab_act_brd : col.sub;
+          });
+
+          this.#shop.render(mw, col, is_light);
+          this.#skins.render(mw, col);
+          this.#stats.render(mw, col, is_light);
+        }
+
+        layout() {
+          const S = this.#state,
+            r = this.#render;
+          const w = window.innerWidth,
+            h = window.innerHeight;
+          r.resize(w, h);
+          const mob = w < 600;
+          S.menu_w = mob ? Math.floor(w * 0.9) : 370;
+          const mw = S.menu_w;
+
+          document.body.classList.toggle("menu_open", S.menu_open);
+          const btn_open = document.getElementById("btn_open");
+          btn_open.style.left =
+            (S.menu_open ? Math.round(r.menu_cont.x + mw + 8) : 14) + "px";
+
+          const score_box = document.getElementById("score_box");
+          if (S.menu_open && !mob) {
+            score_box.style.right = "78px";
+          } else {
+            score_box.style.right = "14px";
+          }
+
+          r.click_area.clear().beginFill(0, 0.001).drawRect(0, 0, w, h);
+          r.mask_g
+            .clear()
+            .beginFill(0)
+            .drawRect(0, Cfg.MENU_TOP, mw, h - Cfg.MENU_TOP);
+
+          const cx = S.menu_open && !mob ? mw + (w - mw) / 2 : w / 2;
+          r.duck.position.set(cx, h / 2);
+          r.combo_lbl.position.set(cx, h * 0.12);
+          r.duck.style.fontSize =
+            Math.min(w - (S.menu_open ? mw : 0), h) * 0.38;
+
+          this.#mhdr_bg
+            .clear()
+            .beginFill(this.#theme.col.mbg)
+            .drawRect(0, 0, mw, Cfg.MENU_TOP);
+          this.#mhdr_lbl.position.set(14, 10);
+
+          const tw = mw / Cfg.TAB_NAMES.length;
+          const is_light = this.#theme.name === "light";
+          const tab_act_fill = is_light ? 0xd6e8ff : 0x1a2a3a;
+          const tab_act_brd = is_light ? 0x4a90d9 : 0x3498db;
+          this.#tabs.forEach(({c, bg, t}, i) => {
+            c.position.set(i * tw + 3, 38);
+            bg.clear()
+              .beginFill(
+                i === S.cur_tab ? tab_act_fill : this.#theme.col.btn,
+                i === S.cur_tab ? 1 : 0.6,
+              )
+              .lineStyle(1, i === S.cur_tab ? tab_act_brd : this.#theme.col.brd)
+              .drawRoundedRect(0, 0, tw - 6, 34, 8);
+            t.position.set((tw - 6) / 2, 17);
+          });
+
+          this.#tab_conts.forEach((c, i) => (c.visible = i === S.cur_tab));
+
+          this.#shop.layout(mw);
+          this.#skins.layout(mw);
+          this.#stats.layout(mw);
+          this.#about.layout(mw);
+
+          const views = [this.#shop, this.#skins, this.#stats, this.#about];
+          const cur_h = views[S.cur_tab]._h || 400;
+          S.max_scroll = Math.min(0, h - Cfg.MENU_TOP - cur_h);
+          this.render();
+        }
+
+        draw_sbar() {
+          const S = this.#state,
+            sg = this.#render.sbar_g;
+          sg.clear();
+          if (!S.menu_open || S.max_scroll >= 0) {
+            sg.visible = false;
+            return;
+          }
+          sg.visible = true;
+          const h = this.#render.screen.height,
+            vh = h - Cfg.MENU_TOP;
+          const bh = Math.max(36, (vh / (vh - S.max_scroll)) * vh);
+          const pct = S.max_scroll < 0 ? S.scroll_y / S.max_scroll : 0;
+          const by = Cfg.MENU_TOP + pct * (vh - bh);
+          sg.beginFill(0x666666, 0.6).drawRoundedRect(
+            S.menu_w - 7,
+            by,
+            4,
+            bh,
+            2,
+          );
+        }
+      }
+
+      // ═══════════════════════════════════════════════════════════════
+      //  InputCtrl — клики, прокрутка, кнопки HUD
+      // ═══════════════════════════════════════════════════════════════
+      class InputCtrl {
+        #state;
+        #render;
+        #particle;
+        #audio;
+        #bus;
+        #toast;
+        #menu;
+        #storm_acc = 0;
+
+        constructor(
+          state,
+          render_sys,
+          particle_sys,
+          audio_svc,
+          event_bus,
+          toast_sys,
+          menu_ctrl,
+        ) {
+          this.#state = state;
+          this.#render = render_sys;
+          this.#particle = particle_sys;
+          this.#audio = audio_svc;
+          this.#bus = event_bus;
+          this.#toast = toast_sys;
+          this.#menu = menu_ctrl;
+
+          render_sys.click_area.on("pointerdown", (e) => this.#on_click(e));
+          this.#setup_scroll();
+          this.#setup_hud_btns();
+        }
+
+        #on_click(e) {
+          const S = this.#state;
+          if (S.menu_open && e.global.x < S.menu_w) return;
+          const now = Date.now();
+          S.clicks.push(now);
+          S.t_clicks++;
+          const cps = S.clicks.length;
+          S.max_cps = Math.max(S.max_cps, cps);
+          const frenzy = cps >= 8,
+            is_crit = Math.random() < S.crit;
+          if (is_crit) S.t_crits++;
+          const boost_m = S.boost_ms > 0 ? 3 : 1;
+          const luck_m =
+            Math.random() < 0.1 * (S.luck_mult - 1 + 1) ? S.luck_mult : 1;
+          const v = Math.floor(
+            S.click_pow *
+              S.mult *
+              (is_crit ? 3 : 1) *
+              (frenzy ? 2 : 1) *
+              boost_m *
+              luck_m,
+          );
+          S.score += v;
+          S.t_earn += v;
+          S.dk_scale = 0.8;
+          S.shake = is_crit ? 14 : frenzy ? 8 : 4;
+          const amp = 0.1 + cps * 0.028 + (is_crit ? 0.18 : 0);
+          S.dk_rot_vel += (Math.random() > 0.5 ? 1 : -1) * amp;
+          S.dk_rot_vel = Math.max(-1.5, Math.min(1.5, S.dk_rot_vel));
+          this.#audio.play(
+            is_crit ? 1100 : 780,
+            is_crit ? "square" : "sine",
+            is_crit ? 0.18 : 0.07,
+            0.06,
+          );
+          let lbl = "+" + Cfg.fmt(v);
+          if (is_crit) lbl += "💥";
+          if (luck_m > 1) lbl += "🍀";
+          this.#particle.pop(
+            lbl,
+            e.global.x,
+            e.global.y,
+            frenzy ? 0xff3333 : is_crit ? 0xff8800 : 0xffcc00,
+            is_crit ? 50 : 32,
+          );
+          const ns = frenzy ? 5 : is_crit ? 3 : 1;
+          for (let i = 0; i < ns; i++) this.#particle.spark();
+          this.#bus.emit("ach_check");
+          this.#bus.emit("ui_update");
+        }
+
+        do_storm_tick(ms) {
+          const S = this.#state;
+          if (S.storm_ms <= 0) return;
+          this.#storm_acc += ms;
+          while (this.#storm_acc >= 100) {
+            this.#storm_acc -= 100;
+            const v = Math.floor(
+              S.click_pow * S.mult * (S.boost_ms > 0 ? 3 : 1),
+            );
+            S.score += v;
+            S.t_earn += v;
+            const dk = this.#render.duck;
+            this.#particle.pop(
+              "+" + Cfg.fmt(v),
+              dk.x + (Math.random() - 0.5) * 80,
+              dk.y + (Math.random() - 0.5) * 80,
+              0x00ccff,
+              24,
+            );
+            this.#particle.spark();
+          }
+          this.#bus.emit("ui_update");
+        }
+
+        use_storm() {
+          const S = this.#state;
+          if (S.upg.storm.lvl === 0 || S.storm_cd > 0 || S.storm_ms > 0) return;
+          S.storm_ms = 5000;
+          S.storm_cd = 60000;
+          this.#storm_acc = 0;
+          this.#audio.play(660, "square", 0.2, 0.1);
+          this.#toast.show("🌪️ БУРЯ КЛИКОВ 5с!");
+        }
+
+        #setup_scroll() {
+          const S = this.#state,
+            r = this.#render;
+          let drag = false,
+            dy = 0;
+          r.menu_bg.on("pointerdown", (e) => {
+            drag = true;
+            dy = e.global.y;
+            e.stopPropagation();
+          });
+          window.addEventListener("pointerup", () => (drag = false));
+          window.addEventListener("pointermove", (e) => {
+            if (drag && S.menu_open) {
+              S.scroll_tgt += (e.clientY - dy) * 1.2;
+              dy = e.clientY;
+            }
+          });
+          r.app.view.addEventListener(
+            "wheel",
+            (e) => {
+              if (S.menu_open && e.clientX < S.menu_w) S.scroll_tgt -= e.deltaY;
+            },
+            {passive: true},
+          );
+        }
+
+        #setup_hud_btns() {
+          const S = this.#state;
+          document
+            .getElementById("btn_open")
+            .addEventListener("pointerdown", (e) => {
+              e.stopPropagation();
+              S.menu_open = !S.menu_open;
+              this.#menu.layout();
+            });
+          document
+            .getElementById("btn_save")
+            .addEventListener("pointerdown", (e) => {
+              e.stopPropagation();
+              this.#bus.emit("save");
+              this.#toast.show("💾 Сохранено!");
+            });
+          document
+            .getElementById("btn_theme")
+            .addEventListener("pointerdown", (e) => {
+              e.stopPropagation();
+              this.#bus.emit("theme_toggle");
+            });
+          document
+            .getElementById("btn_sound")
+            .addEventListener("pointerdown", (e) => {
+              e.stopPropagation();
+              this.#bus.emit("sound_toggle");
+            });
+        }
+      }
+
+      // ═══════════════════════════════════════════════════════════════
+      //  HudCtrl — обновление HTML HUD
+      // ═══════════════════════════════════════════════════════════════
+      class HudCtrl {
+        #state;
+        constructor(state) {
+          this.#state = state;
+        }
+
+        render() {
+          const S = this.#state;
+          document.getElementById("score_val").textContent =
+            "💰 " + Cfg.fmt(S.score);
+          const ps = Math.floor(S.auto * S.mult * (S.boost_ms > 0 ? 3 : 1));
+          let sub =
+            Cfg.fmt(ps) +
+            "/с ×" +
+            (Number.isInteger(S.mult) ? S.mult : S.mult.toFixed(1));
+          if (S.prest_n > 0) sub += " ✨" + S.prest_n;
+          document.getElementById("score_sub").textContent = sub;
+
+          const bb = document.getElementById("boost_bar");
+          if (S.boost_ms > 0) {
+            bb.style.opacity = "1";
+            bb.textContent = "⚡ БУСТ ×3  " + Cfg.sec(S.boost_ms) + "с";
+          } else if (S.storm_ms > 0) {
+            bb.style.opacity = "1";
+            bb.textContent = "🌪️ БУРЯ  " + Cfg.sec(S.storm_ms) + "с";
+          } else bb.style.opacity = "0";
+        }
+      }
+
+      // ═══════════════════════════════════════════════════════════════
+      //  GameLoop — главный тик, дельта-время, оркестровка обновлений
+      // ═══════════════════════════════════════════════════════════════
+      class GameLoop {
+        #state;
+        #render;
+        #theme;
+        #floater;
+        #particle;
+        #gold;
+        #menu;
+        #input;
+        #toast;
+        #hud;
+        #bus;
+
+        constructor(
+          state,
+          render_sys,
+          theme_svc,
+          floater_sys,
+          particle_sys,
+          gold_sys,
+          menu_ctrl,
+          input_ctrl,
+          toast_sys,
+          hud_ctrl,
+          event_bus,
+        ) {
+          this.#state = state;
+          this.#render = render_sys;
+          this.#theme = theme_svc;
+          this.#floater = floater_sys;
+          this.#particle = particle_sys;
+          this.#gold = gold_sys;
+          this.#menu = menu_ctrl;
+          this.#input = input_ctrl;
+          this.#toast = toast_sys;
+          this.#hud = hud_ctrl;
+          this.#bus = event_bus;
+        }
+
+        start() {
+          this.#render.app.ticker.add((delta) => this.#tick(delta));
+        }
+
+        #tick(delta) {
+          const now = Date.now(),
+            dt = delta / 60;
+          const S = this.#state;
+          const ms = this.#render.app.ticker.deltaMS;
+
+          // Тема
+          if (this.#theme.tick(delta)) this.#menu.render();
+
+          // Прокрутка
+          S.scroll_tgt = Math.max(S.max_scroll, Math.min(0, S.scroll_tgt));
+          S.scroll_y += (S.scroll_tgt - S.scroll_y) * 0.2 * delta;
+          this.#render.scroll_cont.y = Math.round(S.scroll_y) + Cfg.MENU_TOP;
+          this.#menu.draw_sbar();
+
+          // CPS
+          S.clicks = S.clicks.filter((t) => now - t < 1000);
+          const cps = S.clicks.length;
+
+          // Бусты и буря
+          if (S.boost_ms > 0) S.boost_ms = Math.max(0, S.boost_ms - ms);
+          if (S.boost_cd > 0) S.boost_cd = Math.max(0, S.boost_cd - ms);
+          if (S.storm_ms > 0) S.storm_ms = Math.max(0, S.storm_ms - ms);
+          if (S.storm_cd > 0) S.storm_cd = Math.max(0, S.storm_cd - ms);
+          this.#input.do_storm_tick(ms);
+
+          // Авто доход
+          S.auto_timer += ms;
+          if (S.auto_timer >= 1000 && S.auto > 0) {
+            S.auto_timer -= 1000;
+            const earned = Math.floor(
+              S.auto * S.mult * (cps >= 8 ? 2 : 1) * (S.boost_ms > 0 ? 3 : 1),
+            );
+            S.score += earned;
+            S.t_earn += earned;
+            this.#bus.emit("ach_check");
+            this.#bus.emit("ui_update");
+          }
+
+          // Комбо лейбл
+          const cl = this.#render.combo_lbl,
+            dk = this.#render.duck;
+          if (cps > 2) {
+            cl.visible = true;
+            cl.text = cps >= 8 ? cps + " FRENZY x2!" : cps + " clk/s";
+            const j = cps >= 5 ? (Math.random() - 0.5) * cps : 0;
+            cl.position.set(dk.x + j, this.#render.screen.height * 0.12);
+            cl.scale.set(1 + Math.sin(now / 110) * 0.09);
+            cl.style.fill =
+              cps >= 8 ? 0xff3333 : cps >= 5 ? 0xffa500 : 0xffff00;
+          } else cl.visible = false;
+
+          // Анимация утки
+          S.dk_scale += (1 - S.dk_scale) * 0.2 * delta;
+          dk.scale.set(S.dk_scale);
+          S.dk_rot_vel *= Math.pow(0.88, delta);
+          S.dk_rot += S.dk_rot_vel * 0.04 * delta;
+          S.dk_rot += -S.dk_rot * 0.1 * delta;
+          dk.rotation = S.dk_rot;
+
+          // Тряска
+          const w = this.#render.world;
+          if (S.shake > 0.2) {
+            w.position.set(
+              (Math.random() - 0.5) * S.shake,
+              (Math.random() - 0.5) * S.shake,
+            );
+            S.shake *= Math.pow(0.82, delta);
+          } else {
+            S.shake = 0;
+            w.position.set(0, 0);
+          }
+
+          // Сдвиг меню
+          this.#render.menu_cont.x +=
+            ((S.menu_open ? 0 : -S.menu_w) - this.#render.menu_cont.x) *
+            0.25 *
+            delta;
+          const open_left = S.menu_open
+            ? Math.round(this.#render.menu_cont.x + S.menu_w + 8)
+            : 14;
+          document.getElementById("btn_open").style.left = open_left + "px";
+
+          this.#particle.tick(delta);
+          this.#toast.tick(dt);
+          this.#floater.tick(delta);
+          this.#gold.tick(ms, now);
+          this.#hud.render();
+        }
+      }
+
+      // ═══════════════════════════════════════════════════════════════
+      //  AchSys — проверка достижений (подписан на EventBus)
+      // ═══════════════════════════════════════════════════════════════
+      class AchSys {
+        #state;
+        #toast;
+        #audio;
+
+        constructor(state, toast_sys, audio_svc, event_bus) {
+          this.#state = state;
+          this.#toast = toast_sys;
+          this.#audio = audio_svc;
+          event_bus.on("ach_check", () => this.#check());
+        }
+
+        #check() {
+          Cfg.ACHIEV.forEach((a) => {
+            if (!this.#state.unlocked[a.id] && a.chk(this.#state)) {
+              this.#state.unlocked[a.id] = true;
+              this.#toast.show(a.ico + " " + a.name + "!");
+              this.#audio.play(660, "sine", 0.4, 0.1);
+            }
+          });
+        }
+      }
+
+      // ═══════════════════════════════════════════════════════════════
+      //  Game — корневой оркестратор / DI-контейнер
+      // ═══════════════════════════════════════════════════════════════
+      class Game {
+        // Все сервисы и системы хранятся здесь
+        #bus = new EventBus();
+        #audio = new AudioSvc();
+        #theme = new ThemeSvc();
+        #state = new GameState();
+        #render = new RenderSys();
+
+        // Вспомогательная ссылка для передачи скина в SaveSvc
+        #skin_box = {value: "🦆"};
+        #unlocked_skins = new Set(["🦆"]);
+
+        #save;
+        #toast;
+        #floater;
+        #particle;
+        #gold;
+        #shop;
+        #skins;
+        #stats;
+        #about;
+        #menu;
+        #input;
+        #hud;
+        #ach;
+        #loop;
+
+        constructor() {
+          this.#wire_services();
+          this.#wire_systems();
+          this.#wire_events();
+          this.#start();
+        }
+
+        // Создание сервисов и передача зависимостей через конструктор
+        #wire_services() {
+          this.#save = new SaveSvc(
+            this.#state,
+            this.#theme,
+            this.#skin_box,
+            this.#unlocked_skins,
+          );
+          this.#toast = new ToastSys(this.#render);
+          this.#floater = new FloaterSys(this.#render, this.#theme);
+          this.#particle = new ParticleSys(this.#render, this.#render.duck);
+        }
+
+        #wire_systems() {
+          this.#gold = new GoldDuckSys(
+            this.#state,
+            this.#render,
+            this.#particle,
+            this.#audio,
+            this.#bus,
+            this.#toast,
+          );
+          this.#shop = new ShopView(
+            this.#state,
+            this.#audio,
+            this.#bus,
+            this.#theme,
+            this.#toast,
+          );
+          this.#skins = new SkinsView(
+            this.#state,
+            this.#bus,
+            this.#render.duck,
+            this.#unlocked_skins,
+          );
+          this.#stats = new StatsView(this.#state);
+          this.#about = new AboutView();
+          this.#menu = new MenuCtrl(
+            this.#state,
+            this.#render,
+            this.#theme,
+            this.#shop,
+            this.#skins,
+            this.#stats,
+            this.#about,
+          );
+          this.#input = new InputCtrl(
+            this.#state,
+            this.#render,
+            this.#particle,
+            this.#audio,
+            this.#bus,
+            this.#toast,
+            this.#menu,
+          );
+          this.#hud = new HudCtrl(this.#state);
+          this.#ach = new AchSys(
+            this.#state,
+            this.#toast,
+            this.#audio,
+            this.#bus,
+          );
+          this.#loop = new GameLoop(
+            this.#state,
+            this.#render,
+            this.#theme,
+            this.#floater,
+            this.#particle,
+            this.#gold,
+            this.#menu,
+            this.#input,
+            this.#toast,
+            this.#hud,
+            this.#bus,
+          );
+        }
+
+        #wire_events() {
+          this.#bus.on("ui_update", () => this.#menu.render());
+          this.#bus.on("save", () => this.#save.save(this.#render.duck.text));
+          this.#bus.on("theme_toggle", () => {
+            this.#theme.toggle();
+            this.#menu.layout();
+          });
+          this.#bus.on("sound_toggle", () => {
+            const on = this.#audio.toggle();
+            document.getElementById("btn_sound").textContent = on ? "🔊" : "🔇";
+          });
+        }
+
+        #start() {
+          const off_gain = this.#save.load();
+          this.#render.duck.text = this.#skin_box.value;
+          this.#menu.layout();
+          window.addEventListener("resize", () => this.#menu.layout());
+          setInterval(() => this.#save.save(this.#render.duck.text), 30000);
+          window.addEventListener("beforeunload", () =>
+            this.#save.save(this.#render.duck.text),
+          );
+          this.#loop.start();
+          if (off_gain > 0)
+            setTimeout(
+              () =>
+                this.#toast.show(
+                  "💤 Пока вас не было: +" + Cfg.fmt(off_gain) + "!",
+                ),
+              500,
+            );
+        }
+      }
+
+      // Точка входа 
+      window.onload = () => new Game();
+    </script>
+  </body>
 </html>
